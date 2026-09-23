@@ -1,0 +1,9 @@
+<section class="paper review-section">
+    <h2>@Title</h2>
+    @if (Items.Length == 0) { <p class="muted">Brak wystarczających danych.</p> }
+    else { <ul>@foreach (var item in Items) { <li>@item</li> }</ul> }
+</section>
+@code {
+    [Parameter] public string Title { get; set; } = "";
+    [Parameter] public string[] Items { get; set; } = [];
+}

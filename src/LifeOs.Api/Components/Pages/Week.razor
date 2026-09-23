@@ -1,0 +1,29 @@
+@page "/tydzien"
+@inject LifeOsApiClient Api
+<PageTitle>Podsumowanie tygodnia · Life OS</PageTitle>
+<span class="eyebrow">CHWILA NA REFLEKSJĘ</span>
+<h1>Podsumowanie tygodnia</h1>
+<p class="intro">Spójrz na ostatnie siedem dni. Co warto zauważyć, a co sprawdzić dalej?</p>
+<div class="review-actions"><button class="primary" disabled="@generating" @onclick="Generate">@(generating ? "Generowanie podsumowania…" : "Wygeneruj podsumowanie")</button>
+    <p class="muted">Na podstawie ukończonych notatek z ostatnich 7 dni.</p></div>
+@if (generating) { <p class="notice" role="status">Przygotowuję podsumowanie. To może potrwać chwilę.</p> }
+@if (error is not null) { <p class="notice warning" role="alert">@error</p> }
+@if (review is not null) { <ReviewResult Review="review" /> }
+else if (!generating && error is null)
+{
+    <div class="empty"><span class="empty-mark" aria-hidden="true">↗</span><h2>Zobacz więcej w swoich notatkach</h2>
+        <p>Gdy zechcesz, wygeneruj przegląd obserwacji, pomysłów i tematów, które wracały w tym tygodniu.</p></div>
+}
+@code {
+    private WeeklyReview? review;
+    private bool generating;
+    private string? error;
+    private async Task Generate()
+    {
+        if (generating) return;
+        generating = true; error = null;
+        try { review = await Api.GenerateReviewAsync(); }
+        catch (UiApiException e) { error = e.Message; }
+        finally { generating = false; }
+    }
+}

@@ -1,0 +1,13 @@
+<p class="period">@PolishLabels.Date(Review.PeriodStart) — @PolishLabels.Date(Review.PeriodEnd) · czas polski</p>
+<div class="review-grid">
+    <ReviewSection Title="Najważniejsze obserwacje" Items="Review.KeyObservations" />
+    <ReviewSection Title="Powtarzające się tematy" Items="Review.RecurringThemes" />
+    <ReviewSection Title="Co dodawało energii" Items="Review.EnergyGivers" />
+    <ReviewSection Title="Co zabierało energię" Items="Review.EnergyDrainers" />
+    <ReviewSection Title="Otwarte zadania" Items="Review.OpenTasks" />
+    <ReviewSection Title="Najlepsze pomysły na content" Items="Review.BestContentIdeas" />
+    <ReviewSection Title="Ciekawe wzorce" Items="Review.Patterns" />
+    <section class="paper experiment"><span class="eyebrow">MAŁY KROK</span><h2>Eksperyment na kolejny tydzień</h2>
+        <p>@(string.IsNullOrWhiteSpace(Review.SuggestedExperiment) ? "Brak wystarczających danych." : Review.SuggestedExperiment)</p></section>
+</div>
+@code { [Parameter, EditorRequired] public WeeklyReview Review { get; set; } = default!; }

@@ -1,0 +1,80 @@
+@page "/"
+@inject LifeOsApiClient Api
+<PageTitle>Notatki · Life OS</PageTitle>
+@if (message is not null) { <p class="notice" role="status">@message</p> }
+@if (selected is not null)
+{
+    <button class="back" @onclick="BackToList">← Wróć do notatek</button>
+    <CaptureDetails Capture="selected" />
+}
+else if (adding)
+{
+    <button class="back" disabled="@saving" @onclick="() => adding = false">← Wróć do notatek</button>
+    <span class="eyebrow">ZATRZYMAJ MYŚL</span><h1>Dodaj notatkę</h1>
+    <p class="intro">Pisz tak, jak myślisz. Resztę uporządkuje Life OS.</p>
+    <form @onsubmit="Save" @onsubmit:preventDefault class="paper capture-form">
+        <label for="capture-text">Co chcesz zapamiętać?</label>
+        <textarea id="capture-text" @bind="text" @bind:event="oninput" disabled="@saving" rows="8"
+                  placeholder="Dzisiaj zauważyłem…" required></textarea>
+        <p class="muted">Nie musisz wybierać kategorii ani poprawiać interpunkcji.</p>
+        @if (error is not null) { <p class="notice warning" role="alert">@error</p> }
+        <button class="primary" type="submit" disabled="@(saving || string.IsNullOrWhiteSpace(text))">@(saving ? "Zapisywanie i porządkowanie…" : "Zapisz")</button>
+        @if (saving) { <p role="status" class="muted">To może potrwać chwilę. Poczekaj na potwierdzenie.</p> }
+    </form>
+}
+else
+{
+    <div class="page-heading"><div><span class="eyebrow">TWOJA CODZIENNOŚĆ, ZAPISANA</span><h1>Notatki</h1>
+        <p class="intro">Myśli, pomysły i małe odkrycia. W jednym miejscu.</p></div>
+        <button class="primary add-button" @onclick="StartAdding">+ Dodaj notatkę</button></div>
+    <div class="filters" role="group" aria-label="Filtruj według typu">
+        @foreach (var filter in PolishLabels.Filters)
+        {
+            <button class="@(activeType == filter.Type ? "chosen" : "")" aria-pressed="@(activeType == filter.Type)"
+                    @onclick="() => Filter(filter.Type)">@filter.Label</button>
+        }
+    </div>
+    <div class="list-heading"><span>OSTATNIE NOTATKI</span><span>Do 100 najnowszych · czas polski</span></div>
+    @if (loading) { <p class="empty" role="status">Wczytywanie notatek…</p> }
+    else if (error is not null)
+    {
+        <div class="notice warning" role="alert"><p>@error</p><button @onclick="Load">Spróbuj ponownie</button></div>
+    }
+    else { <CaptureList Captures="captures" OnSelect="Open" /> }
+}
+@code {
+    private Capture[] captures = [];
+    private Capture? selected;
+    private CaptureType? activeType;
+    private bool loading = true, adding, saving;
+    private string text = "";
+    private string? error, message;
+    private int loadVersion;
+    protected override async Task OnInitializedAsync() => await Load();
+    private async Task Load()
+    {
+        var version = ++loadVersion;
+        loading = true; error = null;
+        try { var result = await Api.GetCapturesAsync(activeType); if (version == loadVersion) captures = result; }
+        catch (UiApiException e) { if (version == loadVersion) error = e.Message; }
+        finally { if (version == loadVersion) loading = false; }
+    }
+    private async Task Filter(CaptureType? type) { activeType = type; await Load(); }
+    private void Open(Capture capture) { selected = capture; message = null; }
+    private void StartAdding() { adding = true; error = null; message = null; }
+    private async Task BackToList() { selected = null; message = null; await Load(); }
+    private async Task Save()
+    {
+        if (saving || string.IsNullOrWhiteSpace(text)) return;
+        saving = true; error = null;
+        try
+        {
+            selected = await Api.CreateCaptureAsync(text);
+            message = selected.ProcessingState == ProcessingState.COMPLETED ? "Zapisano." :
+                "Zapisano oryginał. Klasyfikacja nie została ukończona — notatka nie pojawi się na liście ani w podsumowaniu tygodnia.";
+            text = ""; adding = false;
+        }
+        catch (UiApiException e) { error = e.Message; }
+        finally { saving = false; }
+    }
+}

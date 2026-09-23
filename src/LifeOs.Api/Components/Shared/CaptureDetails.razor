@@ -1,0 +1,16 @@
+<article class="details">
+    <span class="eyebrow">SZCZEGÓŁY NOTATKI</span>
+    <h1>@(Capture.Title ?? "Zapisana notatka")</h1>
+    <dl class="facts">
+        <div><dt>Typ</dt><dd>@PolishLabels.Type(Capture.Type)</dd></div>
+        <div><dt>Data · czas polski</dt><dd>@PolishLabels.Date(Capture.CapturedAt)</dd></div>
+        <div><dt>Źródło</dt><dd>@PolishLabels.Source(Capture.Source)</dd></div>
+        <div><dt>Przetwarzanie</dt><dd>@PolishLabels.State(Capture.ProcessingState)</dd></div>
+        <div><dt>Wymaga działania</dt><dd>@(Capture.ActionRequired is true ? "Tak" : Capture.ActionRequired is false ? "Nie" : "Nie ustalono")</dd></div>
+    </dl>
+    @if (Capture.Tags.Length > 0) { <div class="tags">@foreach (var tag in Capture.Tags) { <span>#@tag</span> }</div> }
+    @if (!string.IsNullOrWhiteSpace(Capture.ProcessingError)) { <p class="notice warning" role="alert">@Capture.ProcessingError</p> }
+    <section class="paper original"><h2>Oryginalna notatka</h2><p class="raw-text">@Capture.RawText</p></section>
+    <section class="paper"><h2>Podsumowanie AI</h2><p>@(Capture.Summary ?? "Podsumowanie nie jest jeszcze dostępne.")</p></section>
+</article>
+@code { [Parameter, EditorRequired] public Capture Capture { get; set; } = default!; }

@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <base href="/" />
+    <link rel="stylesheet" href="app.css" />
+    <HeadOutlet @rendermode="new InteractiveServerRenderMode(prerender: false)" />
+</head>
+<body>
+    <Routes @rendermode="new InteractiveServerRenderMode(prerender: false)" />
+    <div id="blazor-error-ui" role="alert">Wystąpił błąd aplikacji. <a href="">Odśwież stronę</a></div>
+    <div id="components-reconnect-modal" role="alert">
+        <p>Połączenie z aplikacją zostało przerwane.</p>
+        <p>Jeśli masz niezapisany tekst, skopiuj go przed odświeżeniem.</p>
+        <button onclick="location.reload()">Połącz ponownie</button>
+    </div>
+    <noscript>Włącz JavaScript, aby korzystać z Life OS.</noscript>
+    <script src="_framework/blazor.web.js"></script>
+</body>
+</html>

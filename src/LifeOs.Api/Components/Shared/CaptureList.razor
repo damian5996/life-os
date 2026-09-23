@@ -1,0 +1,25 @@
+@if (Captures.Count == 0)
+{
+    <div class="empty"><span class="empty-mark" aria-hidden="true">＋</span><h2>Jeszcze tu cicho</h2>
+        <p>Brak notatek w tym widoku. Dodaj myśl lub wybierz inny filtr.</p></div>
+}
+else
+{
+    <div class="capture-list">
+        @foreach (var capture in Captures)
+        {
+            <button class="capture-card kind-@capture.Type" @onclick="() => OnSelect.InvokeAsync(capture)">
+                <span class="card-meta"><span class="badge">@PolishLabels.Type(capture.Type)</span>
+                    <time datetime="@capture.CapturedAt.ToString("O")">@PolishLabels.Date(capture.CapturedAt)</time></span>
+                <span class="card-title">@(capture.Title ?? "Notatka")</span>
+                @if (!string.IsNullOrWhiteSpace(capture.Summary)) { <span class="card-summary">@capture.Summary</span> }
+                <span class="tags">@foreach (var tag in capture.Tags.Take(3)) { <span>#@tag</span> }</span>
+                <span class="card-open" aria-hidden="true">↗</span>
+            </button>
+        }
+    </div>
+}
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<Capture> Captures { get; set; } = [];
+    [Parameter] public EventCallback<Capture> OnSelect { get; set; }
+}
