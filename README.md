@@ -16,7 +16,7 @@ dotnet tool restore
 # Wybierz własne hasło; nie zapisuj sekretów w repozytorium.
 $env:POSTGRES_PASSWORD = '<lokalne-hasło>'
 docker compose up -d --wait
-$env:ConnectionStrings__LifeOs = "Host=localhost;Port=5435;Database=lifeos;Username=lifeos;Password=$env:POSTGRES_PASSWORD"
+$env:ConnectionStrings__DefaultConnection = "Host=localhost;Port=5435;Database=lifeos;Username=lifeos;Password=$env:POSTGRES_PASSWORD"
 $env:Llm__ApiKey = '<klucz-api>'
 $env:Llm__Model = '<nazwa-modelu-u-dostawcy>'
 $env:Llm__BaseUrl = 'https://api.openai.com/v1/'
@@ -37,9 +37,48 @@ Plik `.env` może dostarczyć hasło do Compose, ale aplikacja .NET **nie wczytu
 
 ## Konfiguracja
 
+### Supabase PostgreSQL
+
+Aplikacja używa istniejącego `LifeOsDbContext` i `UseNpgsql`: .NET 10, EF Core 10.0.9
+oraz `Npgsql.EntityFrameworkCore.PostgreSQL` 10.0.0. Nie wymaga klienta Supabase ani
+dodatkowych pakietów konfiguracji JSON.
+
+Parametry połączenia: host `aws-1-eu-west-1.pooler.supabase.com`, port `5432`, baza
+`postgres`, użytkownik `postgres.epysgbumwglrgtbwczqr`, `SSL Mode=Require`.
+Hasło i pełny connection string przechowuj poza repozytorium.
+
+Lokalnie zapisz pełny connection string w .NET User Secrets pod kluczem
+`ConnectionStrings:DefaultConnection` (projekt ma już `UserSecretsId`). Poniższy kod
+pyta o connection string bez wyświetlania go i przekazuje go do CLI przez stdin:
+
+```powershell
+$connectionInput = Read-Host 'Pełny connection string Supabase' -AsSecureString
+$connectionValue = [System.Net.NetworkCredential]::new('', $connectionInput).Password
+@{ ConnectionStrings = @{ DefaultConnection = $connectionValue } } | ConvertTo-Json -Compress | dotnet user-secrets set --project src/LifeOs.Api
+Remove-Variable connectionValue, connectionInput
+$env:ASPNETCORE_ENVIRONMENT = 'Development'
+dotnet tool restore
+dotnet ef migrations has-pending-model-changes --project src/LifeOs.Api
+dotnet ef database update --project src/LifeOs.Api
+dotnet run --project src/LifeOs.Api --no-launch-profile --urls http://localhost:5080
+```
+
+User Secrets są wczytywane w środowisku Development. Zmienna środowiskowa
+`ConnectionStrings__DefaultConnection` ma pierwszeństwo; usuń jej lokalną wartość,
+jeśli wcześniej wskazywała na Docker. W Azure App Service ustaw tę samą zmienną
+w konfiguracji aplikacji, z pełnym connection stringiem i hasłem. Nie zapisuj jej
+w `appsettings.json`, profilu publikowania ani innym pliku repozytorium.
+
+Migracja `InitialCreate` tworzy tabelę `Captures` i indeks `CapturedAt`; używa typów
+PostgreSQL (`uuid`, `timestamp with time zone`, `text[]`, `jsonb`). Aplikacja nie
+uruchamia migracji automatycznie. `dotnet ef database update` stosuje brakujące
+migracje i wymaga dostępu do bazy oraz uprawnień do tworzenia tabel.
+
+### Zmienne środowiskowe
+
 | Zmienna środowiskowa | Znaczenie |
 | --- | --- |
-| `ConnectionStrings__LifeOs` | Wymagany connection string PostgreSQL |
+| `ConnectionStrings__DefaultConnection` | Wymagany connection string PostgreSQL; lokalnie także User Secrets `ConnectionStrings:DefaultConnection` |
 | `Llm__ApiKey` | Klucz dostawcy; może być pusty dla lokalnego API bez klucza |
 | `Llm__Model` | Nazwa modelu/deploymentu u dostawcy, bez domyślnego wyboru |
 | `Llm__BaseUrl` | Baza API, domyślnie `https://api.openai.com/v1/`; dodawane jest `chat/completions` |

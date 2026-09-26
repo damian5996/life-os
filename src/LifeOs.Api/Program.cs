@@ -17,7 +17,7 @@ builder.Services.Configure<Microsoft.AspNetCore.Mvc.JsonOptions>(o =>
     o.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter(allowIntegerValues: false)));
 builder.Services.Configure<Microsoft.AspNetCore.Routing.RouteHandlerOptions>(o => o.ThrowOnBadRequest = true);
 builder.Services.AddDbContext<LifeOsDbContext>(o => o.UseNpgsql(
-    builder.Configuration.GetConnectionString("LifeOs") ?? throw new InvalidOperationException("Configure ConnectionStrings__LifeOs.")));
+    builder.Configuration.GetConnectionString("DefaultConnection") ?? throw new InvalidOperationException("Configure ConnectionStrings:DefaultConnection in User Secrets or ConnectionStrings__DefaultConnection in the environment.")));
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddOptions<LlmOptions>().BindConfiguration("Llm")
     .Validate(o => Uri.TryCreate(o.BaseUrl, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https", "Invalid Llm:BaseUrl")
