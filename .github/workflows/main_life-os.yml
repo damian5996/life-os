@@ -64,3 +64,4 @@ jobs:
           app-name: 'life-os'
           slot-name: 'Production'
           package: ./publish
+          startup-command: 'dotnet /home/site/wwwroot/LifeOs.Api.dll'

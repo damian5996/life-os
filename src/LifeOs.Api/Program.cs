@@ -36,8 +36,19 @@ app.Use(async (context, next) =>
     try { await next(context); }
     catch (Exception e)
     {
-        // Exception messages can contain personal data; log only type and trace ID.
-        app.Logger.LogError("Request failed: {ErrorType}, trace {TraceId}", e.GetType().Name, context.TraceIdentifier);
+        // Messages can contain secrets or personal data. Log only types and diagnostic codes.
+        var errorTypes = new List<string>();
+        string? sqlState = null;
+        string? socketError = null;
+        for (Exception? current = e; current is not null; current = current.InnerException)
+        {
+            errorTypes.Add(current.GetType().Name);
+            if (current is Npgsql.PostgresException postgresError) sqlState = postgresError.SqlState;
+            if (current is System.Net.Sockets.SocketException networkError) socketError = networkError.SocketErrorCode.ToString();
+        }
+        app.Logger.LogError(
+            "Request failed: {ErrorTypes}, SQLSTATE {SqlState}, socket {SocketError}, trace {TraceId}",
+            string.Join(" -> ", errorTypes), sqlState, socketError, context.TraceIdentifier);
         var status = e switch { BadHttpRequestException => 400, DbException or DbUpdateException => 503, _ => 500 };
         if (!context.Response.HasStarted)
             await Results.Problem(statusCode: status, title: status switch
