@@ -1,8 +1,10 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/LifeOs.Api/LifeOs.Api.csproj" />
+    <Project Path="src/LifeOs.Mobile/LifeOs.Mobile.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/LifeOs.Api.Tests/LifeOs.Api.Tests.csproj" />
+    <Project Path="tests/LifeOs.Mobile.Tests/LifeOs.Mobile.Tests.csproj" />
   </Folder>
 </Solution>

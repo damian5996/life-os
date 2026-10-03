@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+    <Using Include="Xunit" />
+    <Compile Include="../../src/LifeOs.Mobile/MobileJsonContext.cs" Link="MobileJsonContext.cs" />
+    <!-- Exercise the real HTTP client without an Android runtime. -->
+    <Compile Include="../../src/LifeOs.Mobile/Services/LifeOsApiClient.cs" Link="LifeOsApiClient.cs" />
+    <Compile Include="../../src/LifeOs.Mobile/Models/CaptureResponse.cs" Link="CaptureResponse.cs" />
+    <Compile Include="../../src/LifeOs.Mobile/ApiConfiguration.cs" Link="ApiConfiguration.cs" />
+  </ItemGroup>
+</Project>

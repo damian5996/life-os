@@ -10,6 +10,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
+using Microsoft.AspNetCore.DataProtection;
 
 namespace LifeOs.Api.Tests;
 
@@ -178,13 +180,17 @@ public sealed class ApiTests
     }
 
     [Fact]
-    public async Task SwaggerContainsAllThreeOperations()
+    public async Task SwaggerDescribesTextAudioAndReviewOperations()
     {
         using var app = new TestApp();
         var json = await app.CreateClient().GetStringAsync("/swagger/v1/swagger.json");
         Assert.Contains("/api/captures", json);
+        Assert.Contains("/api/captures/audio", json);
         Assert.Contains("/api/weekly-review", json);
         using var document = System.Text.Json.JsonDocument.Parse(json);
+        var uploadFile = document.RootElement.GetProperty("components").GetProperty("schemas")
+            .GetProperty("AudioUploadRequest").GetProperty("properties").GetProperty("file");
+        Assert.Equal("binary", uploadFile.GetProperty("format").GetString());
         var sourceSchema = document.RootElement.GetProperty("components").GetProperty("schemas").GetProperty("CaptureSource");
         Assert.Equal("string", sourceSchema.GetProperty("type").GetString());
         Assert.Contains(sourceSchema.GetProperty("enum").EnumerateArray(), item => item.GetString() == "VOICE");
@@ -196,11 +202,15 @@ internal sealed class TestApp(int failOnSave = 0, string? postgres = null) : Web
 {
     public static readonly DateTimeOffset Now = DateTimeOffset.Parse("2026-09-22T18:00:00Z");
     public FakeLlm Llm { get; } = new();
+    public FakeTranscription Transcription { get; } = new();
     private readonly string databaseName = Guid.NewGuid().ToString();
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
+        // Tests must not depend on Windows Event Log write permissions.
+        builder.ConfigureLogging(logging => logging.ClearProviders().AddConsole());
         builder.ConfigureServices(services =>
         {
+            services.AddDataProtection().UseEphemeralDataProtectionProvider();
             services.RemoveAll<LifeOsDbContext>();
             services.RemoveAll<DbContextOptions<LifeOsDbContext>>();
             services.RemoveAll<Microsoft.EntityFrameworkCore.Infrastructure.IDbContextOptionsConfiguration<LifeOsDbContext>>();
@@ -212,6 +222,8 @@ internal sealed class TestApp(int failOnSave = 0, string? postgres = null) : Web
             });
             services.RemoveAll<ILifeOsLlmService>();
             services.AddSingleton<ILifeOsLlmService>(Llm);
+            services.RemoveAll<LifeOs.Api.Audio.IAudioTranscriptionService>();
+            services.AddSingleton<LifeOs.Api.Audio.IAudioTranscriptionService>(Transcription);
             services.RemoveAll<TimeProvider>();
             services.AddSingleton<TimeProvider>(new FixedClock());
         });

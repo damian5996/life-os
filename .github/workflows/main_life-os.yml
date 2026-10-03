@@ -24,7 +24,10 @@ jobs:
           dotnet-version: '10.x'
 
       - name: Build with dotnet
-        run: dotnet build --configuration Release
+        run: dotnet build src/LifeOs.Api/LifeOs.Api.csproj --configuration Release
+
+      - name: Test backend
+        run: dotnet test LifeOs.Backend.slnx --configuration Release
 
       - name: dotnet publish
         run: dotnet publish src/LifeOs.Api/LifeOs.Api.csproj -c Release --no-build -o ./publish

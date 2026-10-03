@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="src/LifeOs.Api/LifeOs.Api.csproj" />
+  <Project Path="tests/LifeOs.Api.Tests/LifeOs.Api.Tests.csproj" />
+</Solution>

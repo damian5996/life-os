@@ -1,6 +1,3 @@
-using System.Data.Common;
-using System.Text.Json;
-using System.Text.Json.Serialization;
 using LifeOs.Api.Data;
 using LifeOs.Api.Llm;
 using LifeOs.Api.Models;
@@ -19,54 +16,14 @@ public static class LifeOsEndpoints
         app.MapPost("/api/weekly-review", WeeklyReview).Produces<Models.WeeklyReview>()
             .ProducesProblem(502).ProducesProblem(503).WithSummary("Przegląd notatek COMPLETED z ostatnich 7 dni po polsku");
     }
-    private static async Task<IResult> CreateCapture(CreateCaptureRequest request, LifeOsDbContext db,
-        ILifeOsLlmService llm, TimeProvider clock, ILoggerFactory loggerFactory, CancellationToken cancellationToken)
+    private static async Task<IResult> CreateCapture(CreateCaptureRequest request,
+        LifeOs.Api.Services.CaptureCreationService captures, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(request.Text))
             return Results.ValidationProblem(new Dictionary<string, string[]> { ["text"] = ["Tekst nie może być pusty."] });
         if (request.Source is null || !Enum.IsDefined(request.Source.Value))
             return Results.ValidationProblem(new Dictionary<string, string[]> { ["source"] = ["Podaj VOICE, TEXT lub OTHER."] });
-        var log = loggerFactory.CreateLogger("Captures");
-        var now = clock.GetUtcNow();
-        var capture = new Capture
-        {
-            RawText = request.Text, Source = request.Source.Value, CreatedAt = now,
-            CapturedAt = request.CapturedAt?.ToUniversalTime() ?? now, ProcessingState = ProcessingState.PENDING
-        };
-        log.LogInformation("Capture received {CaptureId}, source {Source}", capture.Id, capture.Source);
-        db.Captures.Add(capture);
-        await db.SaveChangesAsync(cancellationToken);
-        log.LogInformation("Capture persisted {CaptureId}", capture.Id);
-        try
-        {
-            log.LogInformation("Classification started {CaptureId}", capture.Id);
-            var result = await llm.ClassifyCaptureAsync(capture.RawText, cancellationToken);
-            capture.Type = result.Type;
-            capture.Title = result.Title;
-            capture.Summary = result.Summary;
-            capture.Tags = result.Tags;
-            capture.ActionRequired = result.ActionRequired;
-            capture.MetadataJson = JsonSerializer.Serialize(result.Metadata, new JsonSerializerOptions(JsonSerializerDefaults.Web)
-                { DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull });
-            capture.ProcessingState = ProcessingState.COMPLETED;
-            log.LogInformation("Classification succeeded {CaptureId}", capture.Id);
-        }
-        catch (Exception e)
-        {
-            capture.ProcessingState = ProcessingState.FAILED;
-            capture.ProcessingError = e is LlmException ? e.Message : "Nie udało się sklasyfikować notatki. Oryginał jest zapisany.";
-            log.LogWarning("Classification failed {CaptureId}, error type {ErrorType}", capture.Id, e.GetType().Name);
-        }
-        // The raw insert is already committed. A disconnected client must not cancel this final update.
-        using var saveTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-        try { await db.SaveChangesAsync(saveTimeout.Token); }
-        catch (Exception e) when (e is DbUpdateException or DbException or OperationCanceledException)
-        {
-            log.LogError("Enrichment persistence failed {CaptureId}, error type {ErrorType}", capture.Id, e.GetType().Name);
-            return Results.Problem(statusCode: 503, title: "Oryginał zapisano, ale zapis wyniku AI nie powiódł się.",
-                extensions: new Dictionary<string, object?> { ["captureId"] = capture.Id, ["rawCaptureSaved"] = true });
-        }
-        return Results.Created("/api/captures", capture);
+        return await captures.CreateFromTextAsync(request.Text, request.Source.Value, request.CapturedAt, cancellationToken);
     }
     private static async Task<IResult> GetCaptures(LifeOsDbContext db, TimeProvider clock, CancellationToken cancellationToken,
         int? days = null, string? type = null, string? source = null, int limit = 100)

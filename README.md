@@ -2,7 +2,9 @@
 
 Mały eksperyment: **mam myśl → szybko ją zapisuję → Life OS pamięta i porządkuje**.
 ASP.NET Core Minimal API / .NET 10, EF Core, PostgreSQL i API LLM zgodne z OpenAI Chat Completions.
-Minimalny interfejs Blazor po polsku. Bez kont użytkowników, transkrypcji audio, harmonogramu ani dodatkowych integracji.
+Minimalny interfejs Blazor po polsku i aplikacja .NET MAUI Android do nagrywania głosu. Bez kont użytkowników i harmonogramu.
+
+**Audio, Android i widget:** [konfiguracja, uruchomienie i testy](docs/VOICE_CAPTURE.md).
 
 ## Uruchomienie (PowerShell)
 
@@ -10,7 +12,7 @@ Wymagania: SDK .NET 10, PostgreSQL (np. Docker Desktop) i model/API obsługując
 Chat Completions oraz structured outputs lub JSON mode. Polecenia wykonuj w katalogu rozwiązania.
 
 ```powershell
-dotnet restore
+dotnet restore LifeOs.Backend.slnx
 dotnet tool restore
 
 # Wybierz własne hasło; nie zapisuj sekretów w repozytorium.
@@ -100,7 +102,7 @@ Połączenie z rzeczywistym dostawcą wymaga Twojej konfiguracji; testy nie zuż
 LifeOs.slnx
 src/LifeOs.Api/
   Program.cs                  konfiguracja DI, Swagger, prosta obsługa błędów
-  Endpoints/LifeOsEndpoints.cs trzy operacje API
+  Endpoints/                  tekst, audio, historia i przegląd
   Data/LifeOsDbContext.cs      mapowanie PostgreSQL
   Data/Migrations/            początkowa migracja i snapshot
   Models/                     Capture, enumy i silnie typowane odpowiedzi
@@ -113,7 +115,7 @@ tests/LifeOs.Api.Tests/        testy API, kontraktu LLM i PostgreSQL
 compose.yaml                  wyłącznie lokalny PostgreSQL
 ```
 
-Endpointy używają bezpośrednio DbContext i `ILifeOsLlmService`. Brak repozytoriów, mediatora,
+Oba endpointy tworzenia używają wspólnego `CaptureCreationService` z DbContext i `ILifeOsLlmService`. Brak repozytoriów, mediatora,
 warstw domenowych, background workers i infrastruktury do hipotetycznej skali.
 `Source` opisuje kanał wejścia i **nie jest przekazywany do klasyfikacji semantycznej**.
 `RawText` zapisujemy dokładnie jako otrzymaną wartość JSON `text`, wraz ze spacjami, literówkami
@@ -245,7 +247,7 @@ pozostaje pusta. To wskazówki dla modelu, nie gwarancja trafności semantycznej
 ## Testy
 
 ```powershell
-dotnet test
+dotnet test LifeOs.Backend.slnx
 ```
 
 Testy API używają WebApplicationFactory, EF InMemory, stałego zegara i podstawionego
@@ -258,14 +260,14 @@ daty oraz przepływ po awarii AI. **Użyj osobnej, pustej, tymczasowej bazy**; t
 
 ```powershell
 $env:LIFEOS_TEST_POSTGRES = '<connection string tymczasowej bazy>'
-dotnet test
+dotnet test LifeOs.Backend.slnx
 Remove-Item Env:LIFEOS_TEST_POSTGRES
 ```
 
 Bez tej zmiennej test PostgreSQL jest jawnie pomijany. Automatyczne testy nie sprawdzają
 jakości klasyfikacji prawdziwego modelu; użyj przykładów w Swagger po konfiguracji klucza.
 
-## Android / MacroDroid — tylko plan integracji
+## MacroDroid — opcjonalny klient tekstowy
 
 1. Widget uruchamia rozpoznawanie mowy po polsku.
 2. **Android/MacroDroid wykonuje speech-to-text**, backend nie dostaje audio.
@@ -278,18 +280,17 @@ Telefon musi mieć dostęp do adresu komputera/serwera; `localhost` w telefonie 
 Dla zaufanej sieci lokalnej uruchom API z `--urls http://0.0.0.0:5080` i użyj adresu LAN komputera.
 v0.1 celowo nie ma uwierzytelniania — używaj lokalnie lub przez prywatny dostęp, nie wystawiaj
 otwartego portu w Internecie. Czas oczekiwania klienta ustaw dłuższy niż timeout LLM.
-Żadna integracja Android nie jest zaimplementowana w tym repozytorium.
+Natywna aplikacja Android i widget zastępują tę opcjonalną integrację MacroDroid; zobacz [instrukcję audio](docs/VOICE_CAPTURE.md).
 
 ## Świadome ograniczenia i kandydaci na v0.2
 
 Jedno synchroniczne wywołanie AI na zapis; brak retry, deduplikacji, edycji i ponownej
 klasyfikacji przez API. Brak ukończeń zadań: przegląd pokazuje zamiary bez potwierdzonego
 wykonania. Brak utrwalania przeglądów. Duża ilość tekstu może przekroczyć kontekst modelu;
-nie stosujemy cichego obcinania notatek. Brak wyszukiwania, natywnej aplikacji mobilnej,
-audio, RAG, embeddingów, kalendarza, powiadomień, workerów i harmonogramu.
+nie stosujemy cichego obcinania notatek. Brak wyszukiwania, RAG, embeddingów, kalendarza, powiadomień push, workerów i harmonogramu.
 
 Po sprawdzeniu użyteczności: ręczne ponowienie FAILED/PENDING, klucz idempotencji klienta,
-prosty status ukończenia zadania i dopracowany widget MacroDroid. Wybierz wyłącznie to,
+prosty status ukończenia zadania i usprawnienia odzyskiwania nagrań w Androidzie. Wybierz wyłącznie to,
 co rozwiąże problem zaobserwowany podczas rzeczywistego korzystania.
 
 ## Interfejs webowy — Notatki i Tydzień

@@ -17,4 +17,7 @@ public sealed class LlmOptions
     public string Model { get; set; } = "";
     public bool UseJsonSchema { get; set; } = true;
     public int TimeoutSeconds { get; set; } = 60;
+    public string TranscriptionModel { get; set; } = "gpt-4o-mini-transcribe";
+    public string TranscriptionLanguage { get; set; } = "pl";
+    public int TranscriptionTimeoutSeconds { get; set; } = 180;
 }

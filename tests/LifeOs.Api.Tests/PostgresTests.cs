@@ -40,6 +40,15 @@ public sealed class PostgresTests
         var history = await client.GetFromJsonAsync<Capture[]>("/api/captures?days=7&type=FIELD_NOTE&source=VOICE&limit=100", LlmJson.Options);
         Assert.Contains(history!, c => c.RawText == raw);
         app.Llm.Fail = false;
+        using var audio = AudioTests.Upload();
+        response = await client.PostAsync("/api/captures/audio", audio);
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        capture = await response.Content.ReadFromJsonAsync<Capture>(LlmJson.Options);
+        saved = (await app.Captures()).Single(c => c.Id == capture!.Id);
+        Assert.Equal(CaptureSource.VOICE, saved.Source);
+        Assert.Equal(app.Transcription.Text, saved.RawText);
+        Assert.Equal(ProcessingState.COMPLETED, saved.ProcessingState);
+        Assert.Equal("medytacja", Assert.Single(saved.Tags));
         Assert.Equal(HttpStatusCode.OK, (await client.PostAsync("/api/weekly-review", null)).StatusCode);
     }
 }

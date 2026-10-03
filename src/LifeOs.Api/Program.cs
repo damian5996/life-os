@@ -19,13 +19,17 @@ builder.Services.Configure<Microsoft.AspNetCore.Routing.RouteHandlerOptions>(o =
 builder.Services.AddDbContext<LifeOsDbContext>(o => o.UseNpgsql(
     builder.Configuration.GetConnectionString("DefaultConnection") ?? throw new InvalidOperationException("Configure ConnectionStrings:DefaultConnection in User Secrets or ConnectionStrings__DefaultConnection in the environment.")));
 builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddScoped<LifeOs.Api.Services.CaptureCreationService>();
 builder.Services.AddOptions<LlmOptions>().BindConfiguration("Llm")
     .Validate(o => Uri.TryCreate(o.BaseUrl, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https", "Invalid Llm:BaseUrl")
     .Validate(o => o.TimeoutSeconds is >= 1 and <= 300, "Llm:TimeoutSeconds must be 1–300")
+    .Validate(o => o.TranscriptionTimeoutSeconds is >= 1 and <= 300, "Llm:TranscriptionTimeoutSeconds must be 1–300")
     .ValidateOnStart();
 builder.Services.AddHttpClient<ILifeOsLlmService, OpenAiCompatibleLlmService>((sp, http) =>
     http.Timeout = TimeSpan.FromSeconds(sp.GetRequiredService<IOptions<LlmOptions>>().Value.TimeoutSeconds));
 builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddHttpClient<LifeOs.Api.Audio.IAudioTranscriptionService, LifeOs.Api.Audio.OpenAiAudioTranscriptionService>((sp, http) =>
+    http.Timeout = TimeSpan.FromSeconds(sp.GetRequiredService<IOptions<LlmOptions>>().Value.TranscriptionTimeoutSeconds));
 builder.Services.AddSwaggerGen();
 builder.Services.AddRazorComponents().AddInteractiveServerComponents();
 builder.Services.AddHttpClient("LifeOsUi", client => client.Timeout = TimeSpan.FromMinutes(6));
@@ -65,6 +69,7 @@ app.UseStaticFiles();
 app.UseAntiforgery();
 app.MapStaticAssets();
 app.MapLifeOs();
+app.MapAudioCaptures();
 app.MapRazorComponents<App>().AddInteractiveServerRenderMode();
 app.Run();
 public partial class Program;

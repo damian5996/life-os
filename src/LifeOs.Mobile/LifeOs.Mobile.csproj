@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-android</TargetFramework>
+    <RuntimeIdentifiers>android-arm64;android-x64</RuntimeIdentifiers>
+    <!-- .NET 10.0.3xx otherwise adds the desktop host RID when Release trimming is enabled. -->
+    <UseDefaultPublishRuntimeIdentifier>false</UseDefaultPublishRuntimeIdentifier>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>LifeOs.Mobile</RootNamespace>
+    <UseMaui>true</UseMaui>
+    <SingleProject>true</SingleProject>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <ApplicationTitle>Life OS</ApplicationTitle>
+    <ApplicationId>pl.lifeos.mobile</ApplicationId>
+    <ApplicationDisplayVersion>0.1</ApplicationDisplayVersion>
+    <ApplicationVersion>1</ApplicationVersion>
+    <SupportedOSPlatformVersion>26.0</SupportedOSPlatformVersion>
+    <AndroidPackageFormats>apk</AndroidPackageFormats>
+    <EmbedAssembliesIntoApk>true</EmbedAssembliesIntoApk>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Maui.Controls" Version="10.0.20" />
+    <MauiIcon Include="Resources/AppIcon/appicon.svg" Color="#173C35" />
+    <MauiSplashScreen Include="Resources/Splash/splash.svg" Color="#173C35" BaseSize="128,128" />
+    <EmbeddedResource Include="appsettings.json" />
+  </ItemGroup>
+</Project>
