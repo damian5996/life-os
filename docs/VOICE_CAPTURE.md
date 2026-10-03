@@ -129,9 +129,10 @@ Edit **`src/LifeOs.Mobile/appsettings.json`**, then rebuild/reinstall:
 {"ApiBaseUrl":"https://YOUR-LIFE-OS-API/"}
 ```
 
-It contains only a public API URL, not backend settings or secrets. The current Debug URL
-is `http://127.0.0.1:5080/` for USB reverse forwarding on a physical phone. For an emulator
-use `http://10.0.2.2:5080/`; alternatively use a reachable LAN or HTTPS deployment URL. Debug permits
+It contains only a public API URL, not backend settings or secrets. The current URL is
+`https://life-os-eeg7cpfyf6ctb9ff.westeurope-01.azurewebsites.net/` for the deployed Life OS backend.
+For local USB testing use `http://127.0.0.1:5080/` with reverse forwarding; for an emulator
+use `http://10.0.2.2:5080/`. Debug permits
 cleartext HTTP for local development; Release requires HTTPS and does not enable
 cleartext traffic. There is deliberately no authentication in this iteration.
 
@@ -223,6 +224,14 @@ Keep normal capture as tap → talk → stop → saved.
   The container is retained so test notes are not discarded at the end of the session.
 - The user confirmed the device checks and transcription quality on 2026-10-03.
   Widget launch works; a dynamic Record/Stop widget is a possible later improvement.
+- On 2026-10-03, backend commit `41f90c3` was deployed successfully through GitHub
+  Actions to the existing Azure App Service. The HTTPS OpenAPI document includes the
+  audio route, empty multipart input returns 400, and database-backed history returns 200.
+  The deployed backend uses the existing App Service configuration, not the local
+  `lifeos-device-test` database override. Android configuration now points at its HTTPS URL.
+- The HTTPS-configured Release APK was installed on the connected Samsung phone.
+  The USB reverse forwarding was removed. A final user recording without the cable
+  remains to verify the deployed capture workflow independently of the local computer.
 
 This machine has a workspace-local SDK/toolchain under the ignored `.tools` directory.
 To build with it without changing the system-wide .NET installation:
