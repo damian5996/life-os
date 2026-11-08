@@ -1,0 +1,42 @@
+name: Diagnose Life OS runtime
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_E66C17A16CC746E9B49E6C6171AA47D2 }}
+          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_E40591982E1F4E9CAFEEBD29905E6F5B }}
+          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_9B8CFC9B1CA9493789A59E7541061BA9 }}
+      - name: Inspect runtime and configuration names
+        run: |
+          resource_group=$(az webapp list --query "[?name=='life-os'].resourceGroup | [0]" -o tsv)
+          test -n "$resource_group"
+          az webapp show -g "$resource_group" -n life-os --query '{state:state,availabilityState:availabilityState,enabled:enabled,host:defaultHostName}'
+          az webapp config show -g "$resource_group" -n life-os --query '{runtime:linuxFxVersion,startup:appCommandLine,alwaysOn:alwaysOn}'
+          az webapp config appsettings list -g "$resource_group" -n life-os --query '[].name'
+          az webapp config connection-string list -g "$resource_group" -n life-os --query '[].{name:name,type:type}'
+          az webapp log download -g "$resource_group" -n life-os --log-file /tmp/lifeos-logs.zip
+      - name: Show runtime error lines without application data
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import os, re, zipfile
+          path = '/tmp/lifeos-logs.zip'
+          if not os.path.exists(path):
+              raise SystemExit('Runtime log download unavailable')
+          with zipfile.ZipFile(path) as archive:
+              names = sorted(n for n in archive.namelist() if n.endswith('.log') and 'docker' in n.lower())[-6:]
+              for name in names:
+                  print(name)
+                  lines = archive.read(name).decode('utf-8', errors='replace').splitlines()
+                  relevant = [line for line in lines if re.search(r'Exception|Error|fail:|SQLSTATE|error|Now listening|Application started|not found|failed|exited|startup', line, re.I)]
+                  for line in relevant[-35:]:
+                      line = re.sub(r'(?i)(password|pwd|apikey|api_key|token|secret)\s*[=:]\s*[^;\s]+', r'\1=[redacted]', line)
+                      print(line[:800])
+          PY
