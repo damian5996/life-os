@@ -1,5 +1,6 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/LifeOs.Shared/LifeOs.Shared.csproj" />
     <Project Path="src/LifeOs.Api/LifeOs.Api.csproj" />
     <Project Path="src/LifeOs.Mobile/LifeOs.Mobile.csproj" />
   </Folder>

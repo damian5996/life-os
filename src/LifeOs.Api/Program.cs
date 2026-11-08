@@ -34,6 +34,7 @@ builder.Services.AddSwaggerGen();
 builder.Services.AddRazorComponents().AddInteractiveServerComponents();
 builder.Services.AddHttpClient("LifeOsUi", client => client.Timeout = TimeSpan.FromMinutes(6));
 builder.Services.AddScoped<LifeOsApiClient>();
+builder.Services.AddScoped<CaptureChanges>();
 var app = builder.Build();
 app.Use(async (context, next) =>
 {
@@ -70,6 +71,6 @@ app.UseAntiforgery();
 app.MapStaticAssets();
 app.MapLifeOs();
 app.MapAudioCaptures();
-app.MapRazorComponents<App>().AddInteractiveServerRenderMode();
+app.MapRazorComponents<App>().AddInteractiveServerRenderMode().AddAdditionalAssemblies(typeof(Routes).Assembly);
 app.Run();
 public partial class Program;

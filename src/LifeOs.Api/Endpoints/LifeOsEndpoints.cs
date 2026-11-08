@@ -13,8 +13,18 @@ public static class LifeOsEndpoints
             .ProducesProblem(503).WithSummary("Zapisz notatkę i spróbuj klasyfikacji AI");
         app.MapGet("/api/captures", GetCaptures).Produces<Capture[]>().ProducesValidationProblem()
             .WithSummary("Historia notatek COMPLETED, od najnowszych według capturedAt");
-        app.MapPost("/api/weekly-review", WeeklyReview).Produces<Models.WeeklyReview>()
-            .ProducesProblem(502).ProducesProblem(503).WithSummary("Przegląd notatek COMPLETED z ostatnich 7 dni po polsku");
+        app.MapGet("/api/captures/export", ExportCaptures)
+            .Produces(200, contentType: "text/markdown", additionalContentTypes: ["application/json"])
+            .ProducesValidationProblem().ProducesProblem(503)
+            .WithSummary("Eksport wszystkich notatek wybranego typu i zakresu (poza koszem lub kosz), także FAILED/PENDING");
+        app.MapDelete("/api/captures/{id:guid}", DeleteCapture).Produces(204).ProducesProblem(503)
+            .WithSummary("Przenieś notatkę do kosza (odwracalnie)");
+        app.MapPost("/api/captures/{id:guid}/restore", RestoreCapture).Produces(204).Produces(404).ProducesProblem(503)
+            .WithSummary("Przywróć notatkę z kosza");
+        app.MapPost("/api/review", GenerateReview).Produces<Models.WeeklyReview>().ProducesValidationProblem()
+            .ProducesProblem(502).ProducesProblem(503).WithSummary("Przegląd notatek: week, month lub six-months");
+        app.MapPost("/api/weekly-review", GenerateReview).Produces<Models.WeeklyReview>().ProducesValidationProblem()
+            .ProducesProblem(502).ProducesProblem(503).WithSummary("Przegląd notatek (domyślnie ostatni tydzień)");
     }
     private static async Task<IResult> CreateCapture(CreateCaptureRequest request,
         LifeOs.Api.Services.CaptureCreationService captures, CancellationToken cancellationToken)
@@ -26,10 +36,11 @@ public static class LifeOsEndpoints
         return await captures.CreateFromTextAsync(request.Text, request.Source.Value, request.CapturedAt, cancellationToken);
     }
     private static async Task<IResult> GetCaptures(LifeOsDbContext db, TimeProvider clock, CancellationToken cancellationToken,
-        int? days = null, string? type = null, string? source = null, int limit = 100)
+        int? days = null, string? type = null, string? source = null, int limit = 100, bool deleted = false)
     {
         if (days is <= 0 or > 36500 || limit is < 1 or > 500) return InvalidQuery("days: 1–36500; limit: 1–500.");
-        var query = db.Captures.AsNoTracking().Where(c => c.ProcessingState == ProcessingState.COMPLETED);
+        var query = db.Captures.AsNoTracking().Where(c => deleted
+            ? c.DeletedAt != null : c.DeletedAt == null && c.ProcessingState == ProcessingState.COMPLETED);
         if (days.HasValue)
         {
             var since = clock.GetUtcNow().AddDays(-days.Value);
@@ -52,17 +63,64 @@ public static class LifeOsEndpoints
     }
     private static IResult InvalidQuery(string message) => Results.ValidationProblem(
         new Dictionary<string, string[]> { ["query"] = [message] });
-    private static async Task<IResult> WeeklyReview(LifeOsDbContext db, ILifeOsLlmService llm,
-        TimeProvider clock, ILoggerFactory loggerFactory, CancellationToken cancellationToken)
+    private static async Task<IResult> ExportCaptures(LifeOsDbContext db, TimeProvider clock, HttpContext context,
+        CancellationToken cancellationToken, string format = "markdown", string? type = null, bool deleted = false)
+    {
+        context.Response.Headers.CacheControl = "no-store";
+        context.Response.Headers["X-Content-Type-Options"] = "nosniff";
+        if (format is not ("markdown" or "json")) return InvalidQuery("format: markdown lub json.");
+        var query = db.Captures.AsNoTracking().Where(c => deleted ? c.DeletedAt != null : c.DeletedAt == null);
+        if (type is not null)
+        {
+            if (!Enum.GetNames<CaptureType>().Contains(type)) return InvalidQuery("Nieprawidłowy type.");
+            var value = Enum.Parse<CaptureType>(type);
+            query = query.Where(c => c.Type == value);
+        }
+        var captures = await query.OrderByDescending(c => c.CapturedAt).ThenByDescending(c => c.CreatedAt)
+            .ThenBy(c => c.Id).ToListAsync(cancellationToken);
+        var now = clock.GetUtcNow();
+        var bytes = format == "json" ? Services.CaptureExport.ToJson(captures, now, type, deleted)
+            : Services.CaptureExport.ToMarkdown(captures, now, type, deleted);
+        var extension = format == "json" ? "json" : "md";
+        var filename = $"lifeos-{(deleted ? "kosz" : "notatki")}-{type ?? "wszystkie"}-{now:yyyyMMdd-HHmmss}Z.{extension}";
+        return Results.File(bytes, format == "json" ? "application/json; charset=utf-8" : "text/markdown; charset=utf-8", filename);
+    }
+    private static async Task<IResult> DeleteCapture(Guid id, LifeOsDbContext db, TimeProvider clock, CancellationToken cancellationToken)
+    {
+        var capture = await db.Captures.FindAsync([id], cancellationToken);
+        if (capture is not null && capture.DeletedAt is null)
+        {
+            capture.DeletedAt = clock.GetUtcNow();
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        return Results.NoContent();
+    }
+    private static async Task<IResult> RestoreCapture(Guid id, LifeOsDbContext db, CancellationToken cancellationToken)
+    {
+        var capture = await db.Captures.FindAsync([id], cancellationToken);
+        if (capture is null) return Results.NotFound();
+        capture.DeletedAt = null;
+        await db.SaveChangesAsync(cancellationToken);
+        return Results.NoContent();
+    }
+    private static async Task<IResult> GenerateReview(LifeOsDbContext db, ILifeOsLlmService llm,
+        TimeProvider clock, ILoggerFactory loggerFactory, CancellationToken cancellationToken, string period = "week")
     {
         var end = clock.GetUtcNow();
-        var start = end.AddDays(-7);
+        if (period is not ("week" or "month" or "six-months"))
+            return InvalidQuery("period: week, month lub six-months.");
+        var start = period switch
+        {
+            "month" => end.AddMonths(-1),
+            "six-months" => end.AddMonths(-6),
+            _ => end.AddDays(-7)
+        };
         var captures = await db.Captures.AsNoTracking()
-            .Where(c => c.ProcessingState == ProcessingState.COMPLETED && c.CapturedAt >= start && c.CapturedAt <= end)
+            .Where(c => c.DeletedAt == null && c.ProcessingState == ProcessingState.COMPLETED && c.CapturedAt >= start && c.CapturedAt <= end)
             .OrderBy(c => c.CapturedAt).ToListAsync(cancellationToken);
         try
         {
-            var content = captures.Count == 0 ? ReviewContent.Empty : await llm.GenerateWeeklyReviewAsync(captures, cancellationToken);
+            var content = captures.Count == 0 ? ReviewContent.Empty : await llm.GenerateReviewAsync(captures, start, end, cancellationToken);
             loggerFactory.CreateLogger("WeeklyReview").LogInformation("Weekly review generated from {Count} captures", captures.Count);
             return Results.Ok(Models.WeeklyReview.From(start, end, content));
         }

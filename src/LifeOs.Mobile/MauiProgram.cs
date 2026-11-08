@@ -10,15 +10,28 @@ public static class MauiProgram
     public static MauiApp CreateMauiApp()
     {
         var builder = MauiApp.CreateBuilder().UseMauiApp<App>();
+        builder.Services.AddMauiBlazorWebView();
         using var stream = typeof(MauiProgram).Assembly.GetManifestResourceStream("LifeOs.Mobile.appsettings.json")!;
         var config = JsonSerializer.Deserialize(stream, MobileJsonContext.Default.ApiConfiguration)!;
         builder.Services.AddSingleton(config);
+        if (!Uri.TryCreate(config.ApiBaseUrl, UriKind.Absolute, out var apiBaseUrl) || apiBaseUrl.Scheme is not ("https" or "http"))
+            throw new InvalidOperationException("Nieprawidłowy adres API w konfiguracji aplikacji.");
+#if !DEBUG
+        if (apiBaseUrl.Scheme != "https") throw new InvalidOperationException("Wersja Release wymaga HTTPS.");
+#endif
+        builder.Services.AddSingleton(new LifeOs.Api.Ui.LifeOsClientOptions(apiBaseUrl));
+        builder.Services.AddHttpClient("LifeOsUi", http => http.Timeout = TimeSpan.FromMinutes(6));
+        builder.Services.AddScoped<LifeOs.Api.Ui.LifeOsApiClient>();
+        builder.Services.AddScoped<LifeOs.Api.Ui.CaptureChanges>();
+        builder.Services.AddSingleton<LifeOs.Api.Ui.IExportDestination, NativeExportDestination>();
         builder.Services.AddSingleton(new HttpClient { Timeout = TimeSpan.FromMinutes(11) });
         builder.Services.AddSingleton<ILifeOsApiClient, LifeOsApiClient>();
         builder.Services.AddSingleton<AudioRecorder>();
         builder.Services.AddSingleton<IAudioRecorder>(sp => sp.GetRequiredService<AudioRecorder>());
         builder.Services.AddSingleton<CaptureSession>();
         builder.Services.AddSingleton<MainPage>();
+        builder.Services.AddSingleton<NotebookPage>();
+        builder.Services.AddSingleton<RecordingPage>();
         return builder.Build();
     }
 }

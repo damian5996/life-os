@@ -1,0 +1,39 @@
+@page "/tydzien"
+@page "/podsumowania"
+@inject LifeOsApiClient Api
+<PageTitle>Podsumowania · Life OS</PageTitle>
+<span class="eyebrow">CHWILA NA REFLEKSJĘ</span>
+<h1>Podsumowania</h1>
+<p class="intro">Spójrz na swoje notatki. Co warto zauważyć, a co sprawdzić dalej?</p>
+<div class="review-actions">
+    <label for="review-period">Okres podsumowania</label>
+    <select id="review-period" @bind="period" @bind:after="ClearReview" disabled="@generating">
+        <option value="week">Tydzień</option>
+        <option value="month">Miesiąc</option>
+        <option value="six-months">6 miesięcy</option>
+    </select>
+    <button class="primary" disabled="@generating" @onclick="Generate">@(generating ? "Generowanie podsumowania…" : "Wygeneruj podsumowanie")</button>
+    <p class="muted">Na podstawie ukończonych notatek z wybranego okresu, liczonego wstecz od teraz. Notatki z kosza są pomijane.</p></div>
+@if (generating) { <p class="notice" role="status">Przygotowuję podsumowanie. To może potrwać chwilę.</p> }
+@if (error is not null) { <p class="notice warning" role="alert">@error</p> }
+@if (review is not null) { <ReviewResult Review="review" /> }
+else if (!generating && error is null)
+{
+    <div class="empty"><span class="empty-mark" aria-hidden="true">↗</span><h2>Zobacz więcej w swoich notatkach</h2>
+        <p>Gdy zechcesz, wygeneruj przegląd obserwacji, pomysłów i tematów z wybranego okresu.</p></div>
+}
+@code {
+    private WeeklyReview? review;
+    private bool generating;
+    private string? error;
+    private string period = "week";
+    private void ClearReview() { review = null; error = null; }
+    private async Task Generate()
+    {
+        if (generating) return;
+        generating = true; error = null; review = null;
+        try { review = await Api.GenerateReviewAsync(period); }
+        catch (UiApiException e) { error = e.Message; }
+        finally { generating = false; }
+    }
+}

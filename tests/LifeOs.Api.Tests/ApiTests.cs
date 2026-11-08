@@ -17,6 +17,71 @@ namespace LifeOs.Api.Tests;
 
 public sealed class ApiTests
 {
+    [Fact]
+    public async Task DeletedCaptureIsPreservedButExcludedFromHistoryAndReviewAndCanBeRestored()
+    {
+        using var app = new TestApp();
+        await app.Seed(-1);
+        var original = Assert.Single(await app.Captures());
+        var client = app.CreateClient();
+        Assert.Equal(HttpStatusCode.NoContent, (await client.DeleteAsync($"/api/captures/{original.Id}")).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await client.DeleteAsync($"/api/captures/{original.Id}")).StatusCode);
+        var deleted = Assert.Single(await app.Captures());
+        Assert.Equal(TestApp.Now, deleted.DeletedAt);
+        Assert.Equal(original.RawText, deleted.RawText);
+        Assert.Empty((await client.GetFromJsonAsync<Capture[]>("/api/captures", LlmJson.Options))!);
+        Assert.Single((await client.GetFromJsonAsync<Capture[]>("/api/captures?deleted=true", LlmJson.Options))!);
+        (await client.PostAsync("/api/review?period=six-months", null)).EnsureSuccessStatusCode();
+        Assert.Equal(0, app.Llm.ReviewCalls);
+        Assert.Equal(HttpStatusCode.NoContent, (await client.PostAsync($"/api/captures/{original.Id}/restore", null)).StatusCode);
+        Assert.Null(Assert.Single(await app.Captures()).DeletedAt);
+        Assert.Single((await client.GetFromJsonAsync<Capture[]>("/api/captures", LlmJson.Options))!);
+        (await client.PostAsync("/api/review", null)).EnsureSuccessStatusCode();
+        Assert.Equal(original.Id, Assert.Single(app.Llm.ReviewCaptures).Id);
+    }
+
+    [Fact]
+    public async Task FailedDeleteKeepsCaptureActive()
+    {
+        using var app = new TestApp();
+        await app.Seed(-1);
+        var capture = Assert.Single(await app.Captures());
+        app.FailSaves = true;
+        var response = await app.CreateClient().DeleteAsync($"/api/captures/{capture.Id}");
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        Assert.Null(Assert.Single(await app.Captures()).DeletedAt);
+    }
+
+    [Theory]
+    [InlineData("week", 7)]
+    [InlineData("month", 31)]
+    [InlineData("six-months", 184)]
+    public async Task ReviewUsesSelectedPeriodAndIncludesItsBoundaries(string period, int days)
+    {
+        using var app = new TestApp();
+        await app.Seed(-days - 1, -days, -1, 0, 1);
+        await app.SeedState(ProcessingState.FAILED, -1);
+        await app.SeedState(ProcessingState.PENDING, -1);
+        var response = await app.CreateClient().PostAsync($"/api/review?period={period}", null);
+        response.EnsureSuccessStatusCode();
+        var review = await response.Content.ReadFromJsonAsync<WeeklyReview>();
+        Assert.Equal(TestApp.Now.AddDays(-days), review!.PeriodStart);
+        Assert.Equal(TestApp.Now, review.PeriodEnd);
+        Assert.Equal(3, app.Llm.ReviewCaptures.Count);
+        Assert.All(app.Llm.ReviewCaptures, c => Assert.InRange(c.CapturedAt, review.PeriodStart, review.PeriodEnd));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("year")]
+    public async Task InvalidReviewPeriodDoesNotCallLlm(string period)
+    {
+        using var app = new TestApp();
+        await app.Seed(-1);
+        Assert.Equal(HttpStatusCode.BadRequest, (await app.CreateClient().PostAsync($"/api/review?period={period}", null)).StatusCode);
+        Assert.Equal(0, app.Llm.ReviewCalls);
+    }
+
     [Theory]
     [InlineData(null)] [InlineData("")] [InlineData(" \r\n ")]
     public async Task EmptyTextIsRejected(string? text)
@@ -171,7 +236,7 @@ public sealed class ApiTests
     {
         using var app = new TestApp();
         var client = app.CreateClient();
-        foreach (var path in new[] { "/", "/tydzien", "/app.css", "/_framework/blazor.web.js" })
+        foreach (var path in new[] { "/", "/tydzien", "/podsumowania", "/app.css", "/_content/LifeOs.Shared/app.css", "/_framework/blazor.web.js" })
         {
             var response = await client.GetAsync(path);
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -200,6 +265,7 @@ public sealed class ApiTests
 
 internal sealed class TestApp(int failOnSave = 0, string? postgres = null) : WebApplicationFactory<Program>
 {
+    public bool FailSaves { get; set; }
     public static readonly DateTimeOffset Now = DateTimeOffset.Parse("2026-09-22T18:00:00Z");
     public FakeLlm Llm { get; } = new();
     public FakeTranscription Transcription { get; } = new();
@@ -218,7 +284,7 @@ internal sealed class TestApp(int failOnSave = 0, string? postgres = null) : Web
             {
                 if (postgres is null) o.UseInMemoryDatabase(databaseName);
                 else o.UseNpgsql(postgres);
-                o.AddInterceptors(new FailSave(failOnSave));
+                o.AddInterceptors(new FailSave(failOnSave, () => FailSaves));
             });
             services.RemoveAll<ILifeOsLlmService>();
             services.AddSingleton<ILifeOsLlmService>(Llm);
@@ -244,13 +310,13 @@ internal sealed class TestApp(int failOnSave = 0, string? postgres = null) : Web
         await db.SaveChangesAsync();
     }
     private sealed class FixedClock : TimeProvider { public override DateTimeOffset GetUtcNow() => Now; }
-    private sealed class FailSave(int failOnSave) : SaveChangesInterceptor
+    private sealed class FailSave(int failOnSave, Func<bool> failSaves) : SaveChangesInterceptor
     {
         private int calls;
         public override ValueTask<InterceptionResult<int>> SavingChangesAsync(DbContextEventData eventData,
             InterceptionResult<int> result, CancellationToken cancellationToken = default)
         {
-            if (++calls == failOnSave) throw new DbUpdateException("Simulated database outage");
+            if (++calls == failOnSave || failSaves()) throw new DbUpdateException("Simulated database outage");
             return ValueTask.FromResult(result);
         }
     }
@@ -271,7 +337,8 @@ internal sealed class FakeLlm : ILifeOsLlmService
         return new(CaptureType.FIELD_NOTE, "Spokój", "Medytacja przyniosła spokój.", ["medytacja"], false,
             new("medytacja", null, 7, null));
     }
-    public Task<ReviewContent> GenerateWeeklyReviewAsync(IReadOnlyList<Capture> captures, CancellationToken cancellationToken)
+    public Task<ReviewContent> GenerateReviewAsync(IReadOnlyList<Capture> captures, DateTimeOffset periodStart,
+        DateTimeOffset periodEnd, CancellationToken cancellationToken)
     {
         ReviewCalls++;
         ReviewCaptures = captures;

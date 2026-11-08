@@ -2,7 +2,8 @@
 
 Mały eksperyment: **mam myśl → szybko ją zapisuję → Life OS pamięta i porządkuje**.
 ASP.NET Core Minimal API / .NET 10, EF Core, PostgreSQL i API LLM zgodne z OpenAI Chat Completions.
-Minimalny interfejs Blazor po polsku i aplikacja .NET MAUI Android do nagrywania głosu. Bez kont użytkowników i harmonogramu.
+Wspólny interfejs Blazor po polsku dla Web i .NET MAUI Blazor Hybrid na Androidzie,
+z dodatkowym natywnym nagrywaniem głosu i widgetem. Bez kont użytkowników i harmonogramu.
 
 **Audio, Android i widget:** [konfiguracja, uruchomienie i testy](docs/VOICE_CAPTURE.md).
 
@@ -105,12 +106,15 @@ src/LifeOs.Api/
   Endpoints/                  tekst, audio, historia i przegląd
   Data/LifeOsDbContext.cs      mapowanie PostgreSQL
   Data/Migrations/            początkowa migracja i snapshot
-  Models/                     Capture, enumy i silnie typowane odpowiedzi
   Llm/                        ILifeOsLlmService, klient HTTP, JSON/schema
   Prompts/                    polskie instrukcje klasyfikacji i przeglądu
-  Components/                 strony i komponenty Blazor
-  Ui/                         klient HTTP istniejącego API i polskie etykiety
-  wwwroot/app.css             responsywne style
+  Components/App.razor        host interfejsu webowego
+src/LifeOs.Shared/
+  Models/                     Capture, enumy i silnie typowane odpowiedzi
+  Components/                 wspólne strony, layout i komponenty Blazor
+  Ui/                         wspólny klient HTTP, etykiety i integracja eksportu
+  wwwroot/app.css             jeden responsywny arkusz stylów dla Web i Androida
+src/LifeOs.Mobile/             host Blazor Hybrid, nagrywanie i natywne udostępnianie
 tests/LifeOs.Api.Tests/        testy API, kontraktu LLM i PostgreSQL
 compose.yaml                  wyłącznie lokalny PostgreSQL
 ```
@@ -150,6 +154,7 @@ Jedna tabela `Captures` (plus standardowa `__EFMigrationsHistory`):
 | --- | --- |
 | `Id` | `uuid`, klucz główny |
 | `CreatedAt`, `CapturedAt` | `timestamp with time zone`, UTC |
+| `DeletedAt` | `timestamp with time zone`, nullable; ustawione oznacza kosz |
 | `RawText`, `Source`, `ProcessingState` | `text`, wymagane |
 | `Type`, `Title`, `Summary`, `ProcessingError` | `text`, nullable |
 | `Tags` | `text[]`, domyślnie pusta tablica w modelu |
@@ -235,14 +240,51 @@ wszystkie filtry opcjonalne, `days` 1–36500, `limit` 1–500 (domyślnie 100),
 `CapturedAt` pierwsze. Bez `days` historia nie ma ograniczenia czasowego. Zwracane są wyłącznie
 rekordy `COMPLETED`. Rekordy `FAILED` i `PENDING` pozostają w bazie, ale są pomijane przez API historii.
 
-`POST /api/weekly-review` bez body: bierze wyłącznie notatki `COMPLETED` z ostatnich 7 × 24 godzin.
+`DELETE /api/captures/{id}` przenosi notatkę do kosza przez ustawienie `DeletedAt`; zwraca 204,
+także gdy notatka już jest w koszu lub nie istnieje. Treść pozostaje w bazie.
+`GET /api/captures?deleted=true` pokazuje kosz (również notatki FAILED/PENDING).
+`POST /api/captures/{id}/restore` przywraca notatkę (204; 404 dla nieistniejącego ID).
+Zwykła historia i nowe podsumowania pomijają kosz. Przywrócenie zachowuje stan AI;
+notatki FAILED/PENDING nadal nie trafiają do zwykłej historii ani podsumowań.
+Wymagana migracja `AddCaptureTrash`: `dotnet ef database update --project src/LifeOs.Api`.
+
+`POST /api/review?period=week` bez body: bierze wyłącznie notatki `COMPLETED` spoza kosza.
+Okresy: `week` (domyślnie 7 × 24 godziny), `month` (jeden miesiąc kalendarzowy wstecz)
+i `six-months` (6 miesięcy kalendarzowych wstecz). Granice liczone są od teraz w UTC,
+z użyciem `AddMonths` dla miesięcy; obie granice są włączone, przyszłe notatki pomijane.
+Nieprawidłowy okres daje 400. `POST /api/weekly-review` pozostaje kompatybilnym aliasem.
 Notatki `FAILED` i `PENDING` nie są wysyłane do LLM. Zwraca `periodStart`, `periodEnd`, `keyObservations`,
 `recurringThemes`, `energyGivers`, `energyDrainers`, `openTasks`, `bestContentIdeas`,
 `patterns`, `suggestedExperiment`. Wszystkie treści generowane są po polsku.
-Daty ustala backend. Brak notatek `COMPLETED` w tym okresie daje puste listy i null bez wywołania LLM.
+Daty ustala backend i przekazuje je AI razem z notatkami. Brak aktywnych notatek `COMPLETED`
+w tym okresie daje puste listy i null bez wywołania LLM.
+Prompty podsumowania notatki i przeglądu wymagają drugiej osoby liczby pojedynczej
+(np. „Tobie podobało się”, „Chcesz”). Istniejące podsumowania notatek nie są regenerowane.
 Awaria LLM daje 502; awaria bazy 503. Przegląd nie jest zapisywany.
 Fakty, wzorce wsparte wieloma notatkami i hipotezy rozróżnia prompt. Bez dowodów sekcja
 pozostaje pusta. To wskazówki dla modelu, nie gwarancja trafności semantycznej.
+
+## Eksport notatek
+
+Na stronie notatek pod filtrami znajdują się przyciski **Pobierz notatki (.md)** i **Pobierz dane (.json)**.
+Eksport uwzględnia wybrany typ oraz aktualny widok: notatki poza koszem albo kosz.
+Obejmuje wszystkie pasujące rekordy, bez limitu 100/500 z historii i bez ograniczenia dat,
+w tym oryginały notatek FAILED/PENDING. Wybranie konkretnego typu pomija notatki bez przypisanego typu.
+Nie wywołuje AI, nie zmienia bazy i nie wymaga nowej migracji.
+
+- **Markdown (.md)** — czytelne archiwum: oryginalna treść, podsumowanie AI, daty w Europe/Warsaw,
+  typ, źródło, tagi, stan przetwarzania, potrzeba działania i metadane. Oryginał znajduje się w bloku
+  tekstowym, aby zachować spacje, nowe linie oraz dosłowny HTML/Markdown.
+- **JSON (.json)** — wszystkie pola notatek, dokładne daty, identyfikatory i stan kosza, plus
+  `schemaVersion`, `exportedAt`, `scope`, `count`. Przydatny do przenoszenia danych i przyszłego importu;
+  aplikacja obecnie nie obsługuje importowania tego pliku. Pełne archiwum wymaga dwóch eksportów
+  z filtrem „Wszystkie”: zwykłego widoku i kosza.
+
+API: `GET /api/captures/export?format=markdown` lub `format=json`, opcjonalnie
+`type=TASK` i `deleted=true`. Domyślny format: Markdown; nieznany format lub typ daje 400.
+Plik jest zwracany jako załącznik UTF-8 z nazwą zawierającą zakres i czas eksportu w UTC,
+z nagłówkiem `Cache-Control: no-store`. Brak notatek daje poprawny, pusty eksport.
+Przy dużym archiwum eksport wymaga pamięci proporcjonalnej do rozmiaru danych.
 
 ## Testy
 
@@ -293,16 +335,25 @@ Po sprawdzeniu użyteczności: ręczne ponowienie FAILED/PENDING, klucz idempote
 prosty status ukończenia zadania i usprawnienia odzyskiwania nagrań w Androidzie. Wybierz wyłącznie to,
 co rozwiąże problem zaobserwowany podczas rzeczywistego korzystania.
 
-## Interfejs webowy — Notatki i Tydzień
+## Interfejs webowy — Notatki i Podsumowania
 
 Jedna aplikacja ASP.NET Core hostuje API i Blazor Interactive Server. Nie potrzeba Node.js,
-oddzielnego hostingu ani dodatkowej migracji. UI korzysta z istniejących trzech endpointów przez
+oddzielnego hostingu. Kosz wymaga migracji `AddCaptureTrash`. UI korzysta z endpointów API przez
 klienta HTTP `LifeOsApiClient`; nie odczytuje bezpośrednio bazy i nie duplikuje klasyfikacji.
 Klient serwerowy korzysta z adresu otwartej aplikacji, więc ten adres musi być również osiągalny
 z serwera (istotne przy późniejszym wdrożeniu za reverse proxy).
 
-- `/` — maksymalnie 100 najnowszych ukończonych notatek, filtry typów, szczegóły i dodawanie tekstu.
-- `/tydzien` — przegląd generowany wyłącznie przyciskiem, z ośmioma polskimi sekcjami.
+Te same komponenty i style z `LifeOs.Shared` są używane w aplikacji Android. Android
+wykonuje interfejs lokalnie i wywołuje API pod adresem z `src/LifeOs.Mobile/appsettings.json`.
+Notatki, filtry, szczegóły, tekst, kosz i podsumowania działają według tych samych zasad.
+Eksport na telefonie otwiera systemowe udostępnianie pliku, a osobna zakładka „Nagraj”
+zachowuje mikrofon i widget. Budowanie APK nie publikuje zmian backendu.
+Instrukcja budowania i sprawdzania na telefonie: [VOICE_CAPTURE.md](docs/VOICE_CAPTURE.md).
+
+- `/` — maksymalnie 100 najnowszych ukończonych notatek, filtry typów, szczegóły, dodawanie tekstu,
+  usuwanie do kosza i przywracanie z kosza.
+- `/podsumowania` (także `/tydzien`) — wybór tygodnia, miesiąca lub 6 miesięcy;
+  przegląd generowany wyłącznie przyciskiem, z ośmioma polskimi sekcjami.
 - `/swagger` — dotychczasowe testowanie API.
 
 Lista nie wyświetla pełnego oryginału. Kliknięcie karty pokazuje niezmieniony tekst obok
@@ -322,11 +373,11 @@ dotnet run --project src/LifeOs.Api --no-launch-profile --urls http://0.0.0.0:50
 
 Na Androidzie otwórz `http://ADRES-IP-KOMPUTERA:5080/` (adres IPv4 aktywnej karty znajdziesz
 przez `ipconfig`). Jeśli zapora blokuje dostęp, zezwól na aplikację wyłącznie w sieci prywatnej.
-Aplikacja nie ma logowania; osoby mające dostęp do portu mogą czytać i dodawać notatki oraz
+Aplikacja nie ma logowania; osoby mające dostęp do portu mogą czytać, dodawać, usuwać do kosza i przywracać notatki oraz
 uruchamiać płatne wywołania LLM. Nie otwieraj tego portu publicznie.
 
 Blazor Server wymaga ciągłego połączenia z serwerem. Brak działania offline, PWA, nagrywania,
-edycji, usuwania, wyszukiwania i trwałych linków do pojedynczych notatek. Szczegóły otwierają
+edycji, trwałego kasowania, wyszukiwania i trwałych linków do pojedynczych notatek. Szczegóły otwierają
 się z już pobranej listy, bez nowego endpointu. Formularz i wygenerowany przegląd są stanem
 bieżącego widoku; odświeżenie lub przejście na inną stronę może je wyczyścić. UI nie zapisuje
 przeglądów. Testy bUnit sprawdzają renderowanie listy i szczegółów, mapowanie filtrów, żądanie

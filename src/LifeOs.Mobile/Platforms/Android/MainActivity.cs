@@ -38,6 +38,7 @@ public sealed class MainActivity : MauiAppCompatActivity
     protected override void OnPostResume()
     {
         base.OnPostResume();
+        IPlatformApplication.Current?.Services.GetService<MainPage>()?.ShowRecordingIfActive();
         if (!startRequested) return;
         startRequested = false;
         // Start only from a resumed, visible activity (Android microphone FGS restriction).

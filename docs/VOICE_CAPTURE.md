@@ -87,13 +87,46 @@ dotnet test tests/LifeOs.Api.Tests
 
 ```text
 App.cs / MauiProgram.cs      one window, DI services and public URL configuration
-Views/MainPage.cs           Polish recording screen and permission flow
+Views/MainPage.cs           native tabs: shared notes UI and recording
+Views/NotebookPage.cs       BlazorWebView hosting shared Razor routes
+Views/RecordingPage.cs      Polish recording screen and permission flow
 Services/CaptureSession.cs  singleton workflow, one retained pending file
 Services/IAudioRecorder.cs  recording boundary
 Services/LifeOsApiClient.cs multipart HttpClient, typed Capture confirmation
+Services/NativeExportDestination.cs app-private export file + Android share sheet
 Models/CaptureResponse.cs   minimal response fields
 Platforms/Android/         activity, recorder, microphone foreground service, widget
 ```
+
+### Shared Web and Android interface (v0.2)
+
+`src/LifeOs.Shared` is a Razor class library used by both the API host and Android.
+It owns the Notes and Reviews pages, list/details components, layout, Polish labels,
+CSS, API contracts and the text/history/review/export HTTP client. Existing
+`LifeOs.Api.*` namespaces are retained to preserve the EF model identity and avoid
+an unnecessary database migration. The library has no EF, database or LLM dependency.
+
+Android runs these components locally in MAUI Blazor Hybrid; it does not load the
+server's website or need a Blazor Server connection. The Web still uses Interactive
+Server. Both load `_content/LifeOs.Shared/app.css` and call the same REST API.
+The phone's API base URL comes from `appsettings.json`, never the WebView's local origin.
+The shared client uses generated JSON metadata for trimmed Android Release builds.
+
+The **Notatki** tab provides history, type filters, details, text entry, trash/restore,
+reviews for a week/month/six months, and Markdown/JSON export. Native export downloads
+the selected scope into a private cache directory and opens Android's share sheet;
+the user chooses a destination. It needs no broad storage permission. Export files
+remain in app cache so the receiving application can read them; the OS may evict them.
+The **Nagraj** tab keeps the original native recorder, foreground service and retry flow.
+Widget launches select that tab before requesting recording. Returning from recording
+refreshes the notes list; an open text draft or details view is preserved. There is
+also an explicit refresh button on the shared notes page.
+
+The phone needs a reachable backend with the trash, reviews and export endpoints from
+this repository, and the `AddCaptureTrash` migration. Deploy the matching backend before
+using these features against Azure; building an APK does not deploy the API. No additional
+database migration is introduced by sharing the interface. Notes and reviews require
+network access; there is still no offline notes cache.
 
 The app records ordinary audio using native `MediaRecorder`: MPEG-4 container,
 `.m4a`, AAC, mono, 44.1 kHz, 64 kbit/s (approximately 0.5 MB/minute). There is no
@@ -178,6 +211,12 @@ An optional launcher shortcut is not included in v0.1.
 
 ## Device acceptance checklist (requires a real microphone/phone)
 
+- Open Notatki and switch filters; compare the same records and appearance with Web.
+- Open details, create a text note, move it to trash and restore it.
+- Generate week/month/six-month reviews; changing the period clears the previous result.
+- Share Markdown and JSON from active notes and trash; inspect the received file.
+- Switch to Nagraj, save audio, return to Notatki and confirm the refreshed list.
+- Leave a text draft, switch tabs, then return and confirm the draft is retained.
 - Fresh install: grant, deny, deny permanently, return from microphone settings.
 - Start normally, talk 1–3 minutes, pause 5 and 15 seconds, resume talking, Stop.
 - Lock/unlock while recording; rotate, leave/reopen app, return from notification.
@@ -197,7 +236,7 @@ Do not print or share personal recordings in logs.
 The upload is synchronous; the app receives no server-side stage progress. The phase
 changes after file bytes reach the HTTP transport, then waits for the final response.
 No upload queue, offline DB, automatic cleanup of failed files, chunks, background
-upload guarantee, auth, note UI, iOS or store publishing. Very long recordings can
+upload guarantee, auth, iOS or store publishing. Very long recordings can
 exceed 25 MB. Android force-stop, calls, microphone contention and OEM battery rules
 can interrupt recording; a foreground service cannot guarantee survival of process death.
 
@@ -206,6 +245,24 @@ manual recovery/export action for retained files, and device-specific lifecycle 
 Keep normal capture as tap → talk → stop → saved.
 
 ## Verification in this workspace
+
+### Shared interface — 2026-10-20
+
+- 103 API/shared UI tests passed; the optional PostgreSQL integration test was skipped.
+- 7 native audio upload tests passed.
+- Android Debug and Release APK builds completed with no warnings/errors. The Release
+  APK contains the shared stylesheet, host HTML and Blazor WebView script.
+- Backend publish includes `LifeOs.Shared.dll` and its static assets. EF reports no
+  model changes after the existing migrations.
+- No phone/emulator was connected for this change; the device checklist above remains
+  to be run for the new UI, tab lifecycle, microphone and native file sharing.
+- A read-only check of the configured Azure server's Swagger schema showed the older
+  API without export, trash/restore or `/api/review`. The matching backend must be
+  deployed; it was not deployed as part of this local implementation.
+- Installable APK: `src/LifeOs.Mobile/bin/Release/net10.0-android/pl.lifeos.mobile-Signed.apk`.
+  Locally prepared backend package: `.tools/deploy/mobile-parity` (both build outputs are ignored).
+
+### Previous recording-only verification
 
 - Backend: 75 tests passed, including an actual disposable PostgreSQL database round-trip
   for the audio route; transcription and classification providers were mocked.

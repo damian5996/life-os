@@ -67,6 +67,26 @@ public sealed class LlmTests
     }
 
     [Fact]
+    public async Task ReviewRequestIncludesExactPeriodOriginalNotesAndDirectAddressInstructions()
+    {
+        var end = DateTimeOffset.Parse("2026-09-22T18:00:00Z");
+        using var client = new HttpClient(new StubHandler(async request =>
+        {
+            using var payload = JsonDocument.Parse(await request.Content!.ReadAsStringAsync());
+            var messages = payload.RootElement.GetProperty("messages");
+            var prompt = messages[0].GetProperty("content").GetString()!;
+            Assert.Contains("drugiej osobie liczby pojedynczej", prompt);
+            Assert.DoesNotContain("przegląd ostatnich 7 dni", prompt);
+            using var input = JsonDocument.Parse(messages[1].GetProperty("content").GetString()!);
+            Assert.Equal(end.AddMonths(-6), input.RootElement.GetProperty("periodStart").GetDateTimeOffset());
+            Assert.Equal(end, input.RootElement.GetProperty("periodEnd").GetDateTimeOffset());
+            Assert.Equal("  Oryginał  ", input.RootElement.GetProperty("captures")[0].GetProperty("rawText").GetString());
+            return Envelope(JsonSerializer.Serialize(ReviewContent.Empty, LlmJson.Options));
+        }));
+        await Create(client).GenerateReviewAsync([new Capture { RawText = "  Oryginał  " }], end.AddMonths(-6), end, default);
+    }
+
+    [Fact]
     public async Task ProviderErrorsDoNotLeakResponseBody()
     {
         using var client = new HttpClient(new StubHandler(_ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.Unauthorized)

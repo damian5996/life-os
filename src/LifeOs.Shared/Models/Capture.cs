@@ -9,6 +9,7 @@ public sealed class Capture
     public Guid Id { get; set; } = Guid.NewGuid();
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset CapturedAt { get; set; }
+    public DateTimeOffset? DeletedAt { get; set; }
     public required string RawText { get; set; }
     public CaptureSource Source { get; set; }
     public CaptureType? Type { get; set; }

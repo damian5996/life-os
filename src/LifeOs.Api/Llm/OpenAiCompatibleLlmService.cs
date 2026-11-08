@@ -11,11 +11,16 @@ public sealed class OpenAiCompatibleLlmService(HttpClient http, IOptions<LlmOpti
     public Task<CaptureClassification> ClassifyCaptureAsync(string text, CancellationToken cancellationToken) =>
         SendAsync<CaptureClassification>(LifeOsPrompts.Classification, text, "capture", cancellationToken);
 
-    public Task<ReviewContent> GenerateWeeklyReviewAsync(IReadOnlyList<Capture> captures, CancellationToken cancellationToken) =>
-        SendAsync<ReviewContent>(LifeOsPrompts.WeeklyReview, JsonSerializer.Serialize(captures.Select(c => new
+    public Task<ReviewContent> GenerateReviewAsync(IReadOnlyList<Capture> captures, DateTimeOffset periodStart,
+        DateTimeOffset periodEnd, CancellationToken cancellationToken) =>
+        SendAsync<ReviewContent>(LifeOsPrompts.WeeklyReview, JsonSerializer.Serialize(new
         {
-            c.Id, c.CapturedAt, c.RawText, c.Type, c.Title, c.Summary, c.Tags, c.ActionRequired
-        }), LlmJson.Options), "weekly_review", cancellationToken);
+            periodStart, periodEnd,
+            captures = captures.Select(c => new
+            {
+                c.Id, c.CapturedAt, c.RawText, c.Type, c.Title, c.Summary, c.Tags, c.ActionRequired
+            })
+        }, LlmJson.Options), "review", cancellationToken);
 
     private async Task<T> SendAsync<T>(string prompt, string input, string name, CancellationToken cancellationToken)
     {

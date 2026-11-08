@@ -12,6 +12,175 @@ namespace LifeOs.Api.Tests;
 
 public sealed class UiTests
 {
+    [Theory]
+    [InlineData("markdown", "text/markdown", ".md")]
+    [InlineData("json", "application/json", ".json")]
+    public void NativeHostUsesConfiguredApiAndSharesExport(string format, string contentType, string extension)
+    {
+        var exports = new FakeExportDestination();
+        using var context = Context(request =>
+        {
+            Assert.Equal("https://phone-api.test/lifeos/", request.RequestUri!.GetLeftPart(UriPartial.Authority) + "/lifeos/");
+            Assert.StartsWith("/lifeos/api/", request.RequestUri.AbsolutePath);
+            if (request.RequestUri.AbsolutePath.EndsWith("/export"))
+            {
+                Assert.Equal($"?format={format}&type=TASK&deleted=true", request.RequestUri.Query);
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                    { Content = new StringContent("Eksport żółć", System.Text.Encoding.UTF8, contentType) });
+            }
+            return Task.FromResult(Json(Array.Empty<Capture>()));
+        });
+        context.Services.AddSingleton(new LifeOsClientOptions(new Uri("https://phone-api.test/lifeos")));
+        context.Services.AddSingleton<IExportDestination>(exports);
+        var page = context.RenderComponent<Notes>();
+        page.Find(".trash-toggle").Click();
+        page.FindAll(".filters button").Single(b => b.TextContent == "Zadania").Click();
+        Assert.Empty(page.FindAll(".export-actions a"));
+        page.Find($".export-{format}").Click();
+        page.WaitForAssertion(() => Assert.Single(exports.Files));
+        var file = exports.Files.Single();
+        Assert.Equal("Eksport żółć", System.Text.Encoding.UTF8.GetString(file.Content));
+        Assert.EndsWith(extension, file.FileName);
+        Assert.Equal(contentType, file.ContentType);
+    }
+
+    [Theory]
+    [InlineData(503, "application/problem+json")]
+    [InlineData(200, "text/html")]
+    public void NativeExportFailureDoesNotShareAnErrorPage(int status, string contentType)
+    {
+        var exports = new FakeExportDestination();
+        using var context = Context(request => Task.FromResult(request.RequestUri!.AbsolutePath.EndsWith("/export")
+            ? new HttpResponseMessage((HttpStatusCode)status) { Content = new StringContent("Error", System.Text.Encoding.UTF8, contentType) }
+            : Json(Array.Empty<Capture>())));
+        context.Services.AddSingleton<IExportDestination>(exports);
+        var page = context.RenderComponent<Notes>();
+        page.Find(".export-markdown").Click();
+        page.WaitForAssertion(() => Assert.Single(page.FindAll("[role=alert]")));
+        Assert.Empty(exports.Files);
+        Assert.False(page.Find(".export-markdown").HasAttribute("disabled"));
+    }
+
+    [Fact]
+    public async Task ReturningFromRecorderRefreshesListButKeepsTextDraft()
+    {
+        var calls = 0;
+        var changes = new CaptureChanges();
+        using var context = Context(_ => { calls++; return Task.FromResult(Json(Array.Empty<Capture>())); });
+        context.Services.AddSingleton(changes);
+        var page = context.RenderComponent<Notes>();
+        await page.InvokeAsync(changes.Notify);
+        page.WaitForAssertion(() => Assert.Equal(2, calls));
+        page.Find(".add-button").Click();
+        page.Find("textarea").Input("Niezapisany tekst");
+        await page.InvokeAsync(changes.Notify);
+        Assert.Equal(2, calls);
+        Assert.Single(page.FindAll("textarea"));
+        page.Dispose();
+        changes.Notify();
+        Assert.Equal(2, calls);
+    }
+
+    private sealed class FakeExportDestination : IExportDestination
+    {
+        public List<ExportFile> Files { get; } = [];
+        public Task ShareAsync(ExportFile file) { Files.Add(file); return Task.CompletedTask; }
+    }
+
+    [Fact]
+    public void ExportLinksFollowSelectedTypeAndTrashWithoutDownloadingOnRender()
+    {
+        var requests = new List<string>();
+        using var context = Context(request =>
+        {
+            requests.Add(request.RequestUri!.PathAndQuery);
+            return Task.FromResult(Json(Array.Empty<Capture>()));
+        });
+        var page = context.RenderComponent<Notes>();
+        Assert.Equal("api/captures/export?format=markdown", page.Find(".export-actions a").GetAttribute("href"));
+        page.FindAll(".filters button").Single(b => b.TextContent == "Zadania").Click();
+        Assert.Equal("api/captures/export?format=markdown&type=TASK", page.Find(".export-actions a").GetAttribute("href"));
+        page.Find(".trash-toggle").Click();
+        Assert.Equal("api/captures/export?format=json&deleted=true", page.Find(".export-actions a:last-of-type").GetAttribute("href"));
+        page.FindAll(".filters button").Single(b => b.TextContent == "Pomysły").Click();
+        Assert.Equal("api/captures/export?format=json&type=IDEA&deleted=true", page.Find(".export-actions a:last-of-type").GetAttribute("href"));
+        Assert.All(page.FindAll(".export-actions a"), a =>
+        {
+            Assert.True(a.HasAttribute("download"));
+            Assert.Equal("false", a.GetAttribute("data-enhance-nav"));
+        });
+        Assert.DoesNotContain(requests, path => path.Contains("/export"));
+    }
+
+    [Fact]
+    public void DeleteAndRestoreRefreshTheListAndUseTheSelectedCaptureId()
+    {
+        var capture = Sample;
+        using var context = Context(request =>
+        {
+            if (request.Method == HttpMethod.Delete)
+            {
+                Assert.Equal($"/api/captures/{capture.Id}", request.RequestUri!.AbsolutePath);
+                capture.DeletedAt = DateTimeOffset.UtcNow;
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NoContent));
+            }
+            if (request.Method == HttpMethod.Post)
+            {
+                Assert.Equal($"/api/captures/{capture.Id}/restore", request.RequestUri!.AbsolutePath);
+                capture.DeletedAt = null;
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NoContent));
+            }
+            var trash = request.RequestUri!.Query.Contains("deleted=true");
+            return Task.FromResult(Json(trash == (capture.DeletedAt is not null) ? new[] { capture } : []));
+        });
+        var page = context.RenderComponent<Notes>();
+        page.Find(".capture-card").Click();
+        page.Find(".delete-button").Click();
+        page.WaitForAssertion(() => Assert.Empty(page.FindAll(".capture-card")));
+        Assert.Contains("Przeniesiono", page.Find("[role=status]").TextContent);
+        page.Find(".trash-toggle").Click();
+        page.WaitForAssertion(() => Assert.Single(page.FindAll(".capture-card")));
+        page.Find(".capture-card").Click();
+        page.Find(".restore-button").Click();
+        page.WaitForAssertion(() => Assert.Empty(page.FindAll(".capture-card")));
+        page.Find(".trash-toggle").Click();
+        page.WaitForAssertion(() => Assert.Single(page.FindAll(".capture-card")));
+    }
+
+    [Fact]
+    public void DeleteFailurePreservesDetailsAndAllowsRetry()
+    {
+        using var context = Context(request => Task.FromResult(request.Method == HttpMethod.Get
+            ? Json(new[] { Sample }) : Json(new { title = "Baza niedostępna." }, HttpStatusCode.ServiceUnavailable)));
+        var page = context.RenderComponent<Notes>();
+        page.Find(".capture-card").Click();
+        page.Find(".delete-button").Click();
+        page.WaitForAssertion(() => Assert.Contains("Baza niedostępna", page.Find("[role=alert]").TextContent));
+        Assert.Equal(Sample.RawText, page.Find(".raw-text").TextContent);
+        Assert.False(page.Find(".delete-button").HasAttribute("disabled"));
+    }
+
+    [Theory]
+    [InlineData("month")]
+    [InlineData("six-months")]
+    public void SelectingPeriodClearsOldReviewAndSendsSelectedValue(string period)
+    {
+        var paths = new List<string>();
+        using var context = Context(request =>
+        {
+            paths.Add(request.RequestUri!.PathAndQuery);
+            return Task.FromResult(Json(WeeklyReview.From(DateTimeOffset.UtcNow.AddDays(-7), DateTimeOffset.UtcNow, ReviewContent.Empty)));
+        });
+        var page = context.RenderComponent<Week>();
+        page.Find("button").Click();
+        page.WaitForAssertion(() => Assert.Single(page.FindAll(".review-grid")));
+        page.Find("select").Change(period);
+        Assert.Empty(page.FindAll(".review-grid"));
+        Assert.Single(paths);
+        page.Find("button").Click();
+        page.WaitForAssertion(() => Assert.Equal($"/api/review?period={period}", paths.Last()));
+    }
+
     private static Capture Sample => new()
     {
         RawText = "  Oryginał bez zmian\nżółć  ", Title = "Spokój po medytacji", Summary = "Chwila spokoju.",
@@ -117,7 +286,7 @@ public sealed class UiTests
         {
             calls++;
             Assert.Equal(HttpMethod.Post, request.Method);
-            Assert.Equal("/api/weekly-review", request.RequestUri!.AbsolutePath);
+            Assert.Equal("/api/review?period=week", request.RequestUri!.PathAndQuery);
             return Task.FromResult(Json(review));
         });
         var page = context.RenderComponent<Week>();

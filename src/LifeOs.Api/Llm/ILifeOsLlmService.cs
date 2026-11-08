@@ -5,7 +5,8 @@ namespace LifeOs.Api.Llm;
 public interface ILifeOsLlmService
 {
     Task<CaptureClassification> ClassifyCaptureAsync(string text, CancellationToken cancellationToken);
-    Task<ReviewContent> GenerateWeeklyReviewAsync(IReadOnlyList<Capture> captures, CancellationToken cancellationToken);
+    Task<ReviewContent> GenerateReviewAsync(IReadOnlyList<Capture> captures, DateTimeOffset periodStart,
+        DateTimeOffset periodEnd, CancellationToken cancellationToken);
 }
 
 public sealed class LlmException(string message) : Exception(message);
