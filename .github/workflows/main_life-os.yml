@@ -68,3 +68,43 @@ jobs:
           slot-name: 'Production'
           package: ./publish
           startup-command: 'dotnet /home/site/wwwroot/LifeOs.Api.dll'
+
+      - name: Restart the application after replacing assemblies
+        run: |
+          resource_group=$(az webapp list --query "[?name=='life-os'].resourceGroup | [0]" -o tsv)
+          test -n "$resource_group"
+          az webapp restart --name life-os --resource-group "$resource_group"
+
+      - name: Verify the public application is ready
+        env:
+          LIFEOS_URL: https://life-os-eeg7cpfyf6ctb9ff.westeurope-01.azurewebsites.net
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import time
+          import urllib.error
+          import urllib.request
+
+          base = os.environ['LIFEOS_URL']
+          required = {'/api/captures/export', '/api/review', '/api/captures/{id}/restore'}
+          for attempt in range(24):
+              try:
+                  request = urllib.request.Request(
+                      base + '/swagger/v1/swagger.json', headers={'Cache-Control': 'no-cache'})
+                  with urllib.request.urlopen(request, timeout=15) as response:
+                      schema = json.load(response)
+                  if not required.issubset(schema.get('paths', {})):
+                      raise ValueError('The server is still serving an older API')
+                  for path in ('/api/captures?limit=1', '/_content/LifeOs.Shared/app.css'):
+                      with urllib.request.urlopen(base + path, timeout=15) as response:
+                          if response.status != 200:
+                              raise ValueError('Application readiness check failed')
+                  print('Public API, database-backed history and shared assets are ready.')
+                  break
+              except (urllib.error.URLError, TimeoutError, ValueError) as error:
+                  print(f'Waiting for application startup ({attempt + 1}/24): {type(error).__name__}')
+                  if attempt == 23:
+                      raise SystemExit('Deployment did not become healthy')
+                  time.sleep(10)
+          PY
