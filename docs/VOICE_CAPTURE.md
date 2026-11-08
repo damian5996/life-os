@@ -246,6 +246,31 @@ Keep normal capture as tap → talk → stop → saved.
 
 ## Verification in this workspace
 
+### Deployed shared interface — 2026-11-08
+
+- 103 API/shared UI tests and 7 mobile upload tests passed. The PostgreSQL integration
+  test also passed against a separate disposable database: 111 passing tests in total.
+- Android Release built with zero warnings/errors. Version 0.2 (version code 2) was
+  installed with `adb install -r` on Samsung SM-S938B, retaining existing app data.
+  Notes, Reviews and Recording screens opened successfully; no Android runtime errors
+  were observed. No USB reverse forwarding is configured; the app uses Azure HTTPS.
+- Application commit `30bb24f` was published through GitHub Actions. Deployment follow-up
+  `24b6593` adds an explicit restart and public readiness checks for the current API,
+  database-backed history and shared stylesheet. Verified deployment:
+  https://github.com/damian5996/life-os/actions/runs/42484088152
+- The existing configured database already had `AddCaptureTrash`; EF found no pending
+  model changes. The published package also passed local Production-mode checks.
+- Live Azure checks passed for history, JSON/Markdown export, shared web assets, text
+  creation with real AI classification (`COMPLETED`), trash, restore and weekly review.
+  Empty multipart audio returned 400. The single deployment test note was left in trash;
+  existing notes were not modified.
+- Azure briefly served the old process against replaced assemblies (`BadImageFormatException`)
+  and took several minutes to restart. The final public readiness check passed. Approved
+  manual runtime diagnostics confirmed .NET 10, the expected startup command and successful
+  startup; configuration values and complete application logs were not printed.
+- A fresh microphone recording and its appearance in Notes still require user confirmation;
+  the broader device acceptance checklist above was not repeated in full.
+
 ### Shared interface — 2026-10-20
 
 - 103 API/shared UI tests passed; the optional PostgreSQL integration test was skipped.
