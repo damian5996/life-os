@@ -259,7 +259,8 @@ Notatki `FAILED` i `PENDING` nie są wysyłane do LLM. Zwraca `periodStart`, `pe
 Daty ustala backend i przekazuje je AI razem z notatkami. Brak aktywnych notatek `COMPLETED`
 w tym okresie daje puste listy i null bez wywołania LLM.
 Prompty podsumowania notatki i przeglądu wymagają drugiej osoby liczby pojedynczej
-(np. „Tobie podobało się”, „Chcesz”). Istniejące podsumowania notatek nie są regenerowane.
+(np. „Podobało ci się”, „Chcesz”), z naturalnym szykiem i bez wymuszania zaimków
+w każdym zdaniu. Istniejące podsumowania notatek nie są regenerowane.
 Awaria LLM daje 502; awaria bazy 503. Przegląd nie jest zapisywany.
 Fakty, wzorce wsparte wieloma notatkami i hipotezy rozróżnia prompt. Bez dowodów sekcja
 pozostaje pusta. To wskazówki dla modelu, nie gwarancja trafności semantycznej.

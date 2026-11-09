@@ -10,6 +10,10 @@ public interface ILifeOsApiClient
     Task<CaptureResponse> UploadAudioAsync(string path, Action uploaded, CancellationToken cancellationToken);
 }
 
+public sealed class NoSpeechDetectedException() : InvalidOperationException(
+    "Nie wykryto mowy. Notatka nie została utworzona. Nagranie pozostało na telefonie. " +
+    "Wybierz „Zachowaj plik i nagraj nowe”, aby spróbować ponownie.");
+
 public sealed class LifeOsApiClient(HttpClient http, ApiConfiguration config) : ILifeOsApiClient
 {
     public async Task<CaptureResponse> UploadAudioAsync(string path, Action uploaded, CancellationToken cancellationToken)
@@ -29,6 +33,8 @@ public sealed class LifeOsApiClient(HttpClient http, ApiConfiguration config) : 
         audio.Headers.ContentType = new MediaTypeHeaderValue("audio/mp4");
         form.Add(audio, "file", "capture.m4a");
         using var response = await http.PostAsync(new Uri(baseUrl.AbsoluteUri.TrimEnd('/') + "/api/captures/audio"), form, cancellationToken);
+        if (response.StatusCode == HttpStatusCode.UnprocessableEntity)
+            throw new NoSpeechDetectedException();
         if (response.StatusCode != HttpStatusCode.Created)
             throw new HttpRequestException("Nie udało się zapisać notatki. Nagranie zostało na telefonie. " +
                 "Przed ponowieniem sprawdź zapis na serwerze — mógł zakończyć się mimo błędu połączenia.");

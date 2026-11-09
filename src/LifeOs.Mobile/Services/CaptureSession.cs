@@ -109,6 +109,11 @@ public sealed class CaptureSession
     private void ClearPending() { PendingPath = null; Preferences.Default.Remove(PendingKey); }
     private void SetFailure(Exception error)
     {
+        if (error is NoSpeechDetectedException)
+        {
+            Status = error.Message;
+            return;
+        }
         Status = "Nie udało się zapisać notatki. Nagranie pozostało na telefonie. " +
             (error is InvalidOperationException ? error.Message :
                 "Sprawdź połączenie i zapis na serwerze przed ponowieniem, aby uniknąć duplikatu.");

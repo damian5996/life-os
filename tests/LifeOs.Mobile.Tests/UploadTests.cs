@@ -72,6 +72,26 @@ public sealed class UploadTests
         finally { File.Delete(path); }
     }
 
+    [Fact]
+    public async Task NoSpeechReportsNoNoteAndRetainsRecording()
+    {
+        var path = Path.GetTempFileName();
+        try
+        {
+            await File.WriteAllBytesAsync(path, [1, 2, 3]);
+            using var http = new HttpClient(new Handler(_ => Task.FromResult(
+                new HttpResponseMessage(HttpStatusCode.UnprocessableEntity)
+                { Content = new StringContent("private provider details must not be shown") })));
+            var api = new LifeOsApiClient(http, new("https://lifeos.test/"));
+            var error = await Assert.ThrowsAsync<NoSpeechDetectedException>(() => api.UploadAudioAsync(path, () => { }, default));
+            Assert.Contains("Nie wykryto mowy", error.Message);
+            Assert.Contains("Notatka nie została utworzona", error.Message);
+            Assert.DoesNotContain("private", error.Message);
+            Assert.Equal(new byte[] { 1, 2, 3 }, await File.ReadAllBytesAsync(path));
+        }
+        finally { File.Delete(path); }
+    }
+
     private sealed class Handler(Func<HttpRequestMessage, Task<HttpResponseMessage>> action) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) => action(request);

@@ -262,6 +262,23 @@ rejects blank transcription with 422 and a clear no-speech message before saving
 No minimum recording length or automatic stop during pauses is imposed. Uploaded audio
 remains on the phone after rejection, following the existing recovery policy.
 
+Verified on the deployed API on 2026-11-09: 1 s and 5 s digital silence and 3 s low-level
+white noise each returned 422 without a capture. A short Polish phrase, the same phrase
+at 3% amplitude, and speech separated by a 3 s pause returned 201/COMPLETED with the
+expected words. These are synthetic regression samples, not a guarantee for every
+microphone, background sound or speech level. Three generated test captures were moved
+to trash; existing notes were not modified.
+
+Android 0.2.2 recognizes 422 separately from network failures and displays the no-speech
+message with instructions to keep the file and record again. It does not discard audio.
+The backend/shared tests passed (107; one optional database test skipped), as did all
+8 mobile upload tests, including retained-file/no-speech feedback.
+
+The classification and review prompts now use natural Polish word order and short,
+lowercase pronouns only when needed, instead of demonstrating sentences starting with
+„Tobie”. A fresh six-month review contained 43 items and no „Tobie” sentence starts.
+Existing capture summaries are not rewritten; reviews are regenerated on request.
+
 ## Verification in this workspace
 
 ### Android scroll gestures — 2026-11-09
