@@ -73,7 +73,7 @@ public sealed class AudioTests
         app.Transcription.Text = text;
         using var form = Upload();
         var response = await app.CreateClient().PostAsync("/api/captures/audio", form);
-        Assert.Equal(HttpStatusCode.BadGateway, response.StatusCode);
+        Assert.Equal(fail ? HttpStatusCode.BadGateway : HttpStatusCode.UnprocessableEntity, response.StatusCode);
         Assert.Empty(await app.Captures());
         Assert.Equal(0, app.Llm.ClassificationCalls);
     }
@@ -158,7 +158,8 @@ public sealed class AudioTests
             Assert.Equal("my-transcriber", await fields["model"].ReadAsStringAsync());
             Assert.Equal("pl", await fields["language"].ReadAsStringAsync());
             Assert.Equal("json", await fields["response_format"].ReadAsStringAsync());
-            Assert.Contains(".NET", await fields["prompt"].ReadAsStringAsync());
+            Assert.Equal("auto", await fields["chunking_strategy"].ReadAsStringAsync());
+            Assert.False(fields.ContainsKey("prompt"));
             Assert.Equal(new byte[] { 1, 2 }, await fields["file"].ReadAsByteArrayAsync());
             return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{\"text\":\"Backend w Azure.\"}") };
         }));
@@ -175,6 +176,31 @@ public sealed class AudioTests
         var service = new OpenAiAudioTranscriptionService(http, Options.Create(new LlmOptions()));
         var error = await Assert.ThrowsAsync<TranscriptionException>(() => service.TranscribeAsync(new MemoryStream([1]), "capture.m4a", "audio/mp4", default));
         Assert.DoesNotContain("private", error.Message);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData(" \r\n ")]
+    public async Task AdapterReportsNoSpeechSeparatelyFromProviderFailure(string text)
+    {
+        using var http = new HttpClient(new Handler(_ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            { Content = JsonContent.Create(new { text }) })));
+        var service = new OpenAiAudioTranscriptionService(http, Options.Create(new LlmOptions()));
+        var error = await Assert.ThrowsAsync<TranscriptionException>(() =>
+            service.TranscribeAsync(new MemoryStream([1]), "capture.m4a", "audio/mp4", default));
+        Assert.True(error.NoSpeech);
+        Assert.Contains("Notatka nie została utworzona", error.Message);
+    }
+
+    [Theory]
+    [InlineData("Tak.")]
+    [InlineData("  Cicho mówię o .NET i Azure.  ")]
+    public async Task AdapterPreservesShortAndTechnicalSpeech(string text)
+    {
+        using var http = new HttpClient(new Handler(_ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            { Content = JsonContent.Create(new { text }) })));
+        var service = new OpenAiAudioTranscriptionService(http, Options.Create(new LlmOptions()));
+        Assert.Equal(text, await service.TranscribeAsync(new MemoryStream([1]), "capture.m4a", "audio/mp4", default));
     }
 
     private sealed class Handler(Func<HttpRequestMessage, Task<HttpResponseMessage>> action) : HttpMessageHandler

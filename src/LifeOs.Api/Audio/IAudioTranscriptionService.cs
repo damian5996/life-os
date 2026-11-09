@@ -6,4 +6,7 @@ public interface IAudioTranscriptionService
         CancellationToken cancellationToken);
 }
 
-public sealed class TranscriptionException(string message) : Exception(message);
+public sealed class TranscriptionException(string message, bool noSpeech = false) : Exception(message)
+{
+    public bool NoSpeech { get; } = noSpeech;
+}

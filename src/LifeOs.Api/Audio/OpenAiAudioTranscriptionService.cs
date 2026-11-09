@@ -25,9 +25,9 @@ public sealed class OpenAiAudioTranscriptionService(HttpClient http, IOptions<Ll
         form.Add(new StringContent(config.TranscriptionModel), "model");
         form.Add(new StringContent(config.TranscriptionLanguage), "language");
         form.Add(new StringContent("json"), "response_format");
-        form.Add(new StringContent("Naturalna wypowiedź po polsku, także potoczna i z urwanymi zdaniami. " +
-            "Zachowaj angielskie terminy: .NET, Azure, backend, content, coaching, API. " +
-            "Zapisuj tylko usłyszaną mowę, bez dopisywania treści do ciszy."), "prompt");
+        form.Add(new StringContent("auto"), "chunking_strategy");
+        // On silent recordings the provider can echo the prompt as a transcription.
+        // Supply the language, but no suggested transcript or instruction text.
         request.Content = form;
         try
         {
@@ -38,7 +38,7 @@ public sealed class OpenAiAudioTranscriptionService(HttpClient http, IOptions<Ll
                 cancellationToken: cancellationToken);
             var text = body.RootElement.GetProperty("text").GetString();
             if (string.IsNullOrWhiteSpace(text))
-                throw new TranscriptionException("Nie rozpoznano mowy w nagraniu.");
+                throw new TranscriptionException("Nie wykryto mowy. Notatka nie została utworzona. Nagraj ponownie.", noSpeech: true);
             return text;
         }
         catch (HttpRequestException) { throw new TranscriptionException("Usługa transkrypcji jest niedostępna."); }

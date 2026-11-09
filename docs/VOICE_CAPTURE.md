@@ -36,9 +36,10 @@ A text-only OpenAI-compatible provider is not necessarily a transcription provid
 | `Llm:TranscriptionLanguage` | `pl` | `Llm__TranscriptionLanguage` |
 | `Llm:TranscriptionTimeoutSeconds` | `180` | `Llm__TranscriptionTimeoutSeconds` |
 
-The adapter uses JSON responses and a short Polish prompt preserving terms such as
-.NET, Azure, backend and API. It does not translate or summarize the transcription.
-Use a model supporting the `language`, `prompt` and `response_format=json` fields.
+The adapter uses JSON responses, Polish language and `chunking_strategy=auto` for
+provider-side voice activity detection. It sends no prompt: the previous instruction
+was echoed as invented speech on a silent recording. It does not translate or summarize
+the transcription. The provider must support language, JSON responses and automatic VAD.
 See the [OpenAI transcription API](https://developers.openai.com/api/reference/cli/resources/audio/subresources/transcriptions/methods/create).
 No OpenAI key or database credentials are included in the Android project.
 
@@ -47,7 +48,8 @@ No OpenAI key or database credentials are included in the Android project.
 - 400: missing/empty/wrong field, multiple files or malformed multipart.
 - 413: file or request too large. A malformed/oversized multipart section can be 400.
 - 415: unsupported extension/MIME or request content type.
-- 502: transcription unavailable, timed out, malformed response or blank text. No capture created.
+- 422: no speech was recognized (blank transcription). No capture or AI classification.
+- 502: transcription unavailable, timed out or malformed response. No capture created.
 - 201 + `processingState=FAILED`: transcription saved; classification failed.
 - 503: database failure. If the raw insert succeeded but enrichment persistence failed,
   the existing `rawCaptureSaved=true` and `captureId` fields are returned.
@@ -245,6 +247,20 @@ can interrupt recording; a foreground service cannot guarantee survival of proce
 Next sensible improvements after real use: idempotency for uncertain uploads, a small
 manual recovery/export action for retained files, and device-specific lifecycle fixes.
 Keep normal capture as tap → talk → stop → saved.
+
+### Priority defect reported 2026-11-09: silence becomes a fabricated note
+
+The user recorded about one second of silence. The saved transcription reproduced the
+entire transcription prompt from `OpenAiAudioTranscriptionService`, and classification
+then marked that invented content COMPLETED. Current validation only rejects an empty
+file or blank transcription; neither establishes that the audio contains speech.
+This defect was confirmed by comparing the screenshot with the source prompt.
+The existing note should not be treated as evidence of anything the user said.
+
+The correction removes the instruction-style prompt, enables provider-side VAD, and
+rejects blank transcription with 422 and a clear no-speech message before saving a note.
+No minimum recording length or automatic stop during pauses is imposed. Uploaded audio
+remains on the phone after rejection, following the existing recovery policy.
 
 ## Verification in this workspace
 

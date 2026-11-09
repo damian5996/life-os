@@ -25,7 +25,7 @@ public static class AudioEndpoints
         app.MapPost("/api/captures/audio", Create)
             .Accepts<AudioUploadRequest>("multipart/form-data")
             .Produces<Capture>(201).ProducesValidationProblem().ProducesProblem(413)
-            .ProducesProblem(415).ProducesProblem(502).ProducesProblem(503)
+            .ProducesProblem(415).ProducesProblem(422).ProducesProblem(502).ProducesProblem(503)
             .WithMetadata(new RequestSizeLimitAttribute(MaxRequestBytes))
             .WithSummary("Transkrybuj nagranie i zapisz notatkę VOICE");
 
@@ -70,14 +70,15 @@ public static class AudioEndpoints
             // Avoid forwarding a personal filename to the provider.
             var text = await transcription.TranscribeAsync(stream, "capture" + extension.ToLowerInvariant(),
                 mediaTypes[0], cancellationToken);
-            if (string.IsNullOrWhiteSpace(text)) throw new TranscriptionException("Nie rozpoznano mowy w nagraniu.");
+            if (string.IsNullOrWhiteSpace(text))
+                throw new TranscriptionException("Nie wykryto mowy. Notatka nie została utworzona. Nagraj ponownie.", noSpeech: true);
             log.LogInformation("Transcription completed");
             return await captures.CreateFromTextAsync(text, CaptureSource.VOICE, null, cancellationToken);
         }
         catch (TranscriptionException e)
         {
             log.LogWarning("Audio transcription failed, error type {ErrorType}", e.GetType().Name);
-            return Results.Problem(statusCode: 502, title: e.Message);
+            return Results.Problem(statusCode: e.NoSpeech ? 422 : 502, title: e.Message);
         }
     }
 
