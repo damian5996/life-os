@@ -253,6 +253,10 @@ Okresy: `week` (domyślnie 7 × 24 godziny), `month` (jeden miesiąc kalendarzow
 i `six-months` (6 miesięcy kalendarzowych wstecz). Granice liczone są od teraz w UTC,
 z użyciem `AddMonths` dla miesięcy; obie granice są włączone, przyszłe notatki pomijane.
 Nieprawidłowy okres daje 400. `POST /api/weekly-review` pozostaje kompatybilnym aliasem.
+Własny zakres: `POST /api/review?period=custom&from=2026-11-01&to=2026-11-08`.
+Obie daty są włączone jako pełne dni w `Europe/Warsaw` (z uwzględnieniem zmiany czasu).
+Data końcowa nie może być wcześniejsza od początkowej ani późniejsza niż dzisiaj.
+Nagrania zsynchronizowane później trafiają do podsumowania według daty nagrania.
 Notatki `FAILED` i `PENDING` nie są wysyłane do LLM. Zwraca `periodStart`, `periodEnd`, `keyObservations`,
 `recurringThemes`, `energyGivers`, `energyDrainers`, `openTasks`, `bestContentIdeas`,
 `patterns`, `suggestedExperiment`. Wszystkie treści generowane są po polsku.
@@ -353,7 +357,7 @@ Instrukcja budowania i sprawdzania na telefonie: [VOICE_CAPTURE.md](docs/VOICE_C
 
 - `/` — maksymalnie 100 najnowszych ukończonych notatek, filtry typów, szczegóły, dodawanie tekstu,
   usuwanie do kosza i przywracanie z kosza.
-- `/podsumowania` (także `/tydzien`) — wybór tygodnia, miesiąca lub 6 miesięcy;
+- `/podsumowania` (także `/tydzien`) — wybór tygodnia, miesiąca, 6 miesięcy lub własnych dat od–do;
   przegląd generowany wyłącznie przyciskiem, z ośmioma polskimi sekcjami.
 - `/swagger` — dotychczasowe testowanie API.
 

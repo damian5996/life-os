@@ -10,7 +10,9 @@ Both text and audio endpoints use it. No model/schema migration is needed.
 `POST /api/captures/audio` receives one multipart `file`, validates it, calls
 `IAudioTranscriptionService`, then creates a capture with `Source=VOICE` and
 `RawText` exactly equal to the transcription. The response is the same 201 Capture
-as text creation. `CapturedAt` defaults to server time.
+as text creation. New clients send `recordingId` (UUID) and `capturedAt` (ISO 8601
+round-trip timestamp with offset) together. `CapturedAt` is the recording start time;
+`CreatedAt` is server insertion time. Legacy uploads without both fields use server time.
 
 Allowed extensions: m4a, mp4, mp3, wav, webm, ogg, flac (case insensitive).
 Maximum audio size: **25,000,000 bytes**. The request has an additional 64 KiB
@@ -54,9 +56,11 @@ No OpenAI key or database credentials are included in the Android project.
 - 503: database failure. If the raw insert succeeded but enrichment persistence failed,
   the existing `rawCaptureSaved=true` and `captureId` fields are returned.
 
-A network failure can occur after a server commit. Check the server before retrying;
-v0.1 has no idempotency. Existing history shows only COMPLETED notes, so checking a
-FAILED/PENDING note may require the database. Reverse proxies can impose smaller
+A network failure can occur after a server commit. The recording UUID is the capture
+primary key: retries return the existing capture, including FAILED/PENDING or trashed
+captures, without transcribing again or restoring it. Conflicting metadata returns 409.
+The database primary key also prevents duplicates from concurrent requests. Legacy
+uploads without a recording UUID do not have this guarantee. Reverse proxies can impose smaller
 body limits or shorter response timeouts than this application.
 
 ## Manual audio request
@@ -92,7 +96,8 @@ App.cs / MauiProgram.cs      one window, DI services and public URL configuratio
 Views/MainPage.cs           native tabs: shared notes UI and recording
 Views/NotebookPage.cs       BlazorWebView hosting shared Razor routes
 Views/RecordingPage.cs      Polish recording screen and permission flow
-Services/CaptureSession.cs  singleton workflow, one retained pending file
+Services/CaptureSession.cs  singleton workflow and manual queue synchronization
+Services/RecordingQueue.cs durable per-recording manifests with original timestamps
 Services/IAudioRecorder.cs  recording boundary
 Services/LifeOsApiClient.cs multipart HttpClient, typed Capture confirmation
 Services/NativeExportDestination.cs app-private export file + Android share sheet
@@ -143,7 +148,7 @@ It is non-sticky: Android must not silently restart the microphone after killing
 process. A persistent notification returns to the app to stop recording.
 See [Android microphone foreground services](https://developer.android.com/develop/background-work/services/fgs/service-types#microphone).
 
-Manifest permissions: INTERNET, RECORD_AUDIO (requested at runtime), FOREGROUND_SERVICE,
+Manifest permissions: INTERNET, ACCESS_NETWORK_STATE, RECORD_AUDIO (requested at runtime), FOREGROUND_SERVICE,
 FOREGROUND_SERVICE_MICROPHONE. No storage, contacts or location permissions.
 The permission-denied screen explains how to enable microphone access and opens app
 settings, including when Android no longer displays a permission prompt. No notification
@@ -153,9 +158,13 @@ can depend on Android settings.
 Recordings live in app-private `Files/recordings` (MAUI AppDataDirectory), excluded
 from Android backup. The file is deleted only after a valid 201 Capture confirmation,
 including FAILED classification (the raw text is saved). Upload failures retain the
-file and the pending path across app restarts. Manual retry warns about duplicates.
-“Zachowaj plik i nagraj nowe” frees the pending UI slot while preserving the old file.
-There is no recordings list or automatic retry. Uninstalling/clearing app data deletes
+file and its UUID/timestamp across app restarts. Multiple recordings can wait in the
+visible queue. Offline Stop saves locally; reconnecting does not send queued files.
+“Synchronizuj” uploads them sequentially; failures stay visible and can be retried or
+explicitly deleted. Online Stop uploads only the newly recorded file. Confirmation is
+persisted atomically before deleting audio. Legacy retained files are recovered using
+file creation time (their exact recording timestamp was not previously stored).
+Uninstalling/clearing app data deletes
 these files; process death may leave an unfinalized, unusable m4a container.
 
 ## Backend URL
@@ -228,7 +237,8 @@ An optional launcher shortcut is not included in v0.1.
 - Stop shows Wysyłanie… → Transkrypcja i analiza… → ✓ Zapisano.
 - Validate Polish/English terminology, VOICE, RawText and AI fields in PostgreSQL.
 - Confirm successful upload removes local m4a; FAILED classification reports saved original.
-- Disable network: recording remains; restart app, retry manually after checking server.
+- Disable network: record multiple notes, restart the app, reconnect and press Synchronizuj.
+  Confirm no automatic upload on reconnect, original dates and no duplicate after retry.
 - Force-stop during recording: no microphone restart; retained file may be incomplete.
 - Verify foreground-service behavior on the actual device/OEM and target Android version.
 
@@ -239,13 +249,13 @@ Do not print or share personal recordings in logs.
 
 The upload is synchronous; the app receives no server-side stage progress. The phase
 changes after file bytes reach the HTTP transport, then waits for the final response.
-No upload queue, offline DB, automatic cleanup of failed files, chunks, background
+No offline notes cache, automatic cleanup of failed files, chunks, background
 upload guarantee, auth, iOS or store publishing. Very long recordings can
 exceed 25 MB. Android force-stop, calls, microphone contention and OEM battery rules
 can interrupt recording; a foreground service cannot guarantee survival of process death.
 
-Next sensible improvements after real use: idempotency for uncertain uploads, a small
-manual recovery/export action for retained files, and device-specific lifecycle fixes.
+Next sensible improvements after real use: manual recovery/export of retained audio
+and device-specific lifecycle fixes.
 Keep normal capture as tap → talk → stop → saved.
 
 ### Priority defect reported 2026-11-09: silence becomes a fabricated note

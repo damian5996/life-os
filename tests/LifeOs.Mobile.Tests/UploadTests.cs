@@ -92,6 +92,32 @@ public sealed class UploadTests
         finally { File.Delete(path); }
     }
 
+    [Fact]
+    public async Task SyncSendsStableIdAndOriginalTimestampAndChecksConfirmationId()
+    {
+        var path = Path.GetTempFileName();
+        var id = Guid.NewGuid();
+        var date = DateTimeOffset.Parse("2026-10-25T02:30:00+02:00");
+        try
+        {
+            await File.WriteAllBytesAsync(path, [1, 2]);
+            using var http = new HttpClient(new Handler(async request =>
+            {
+                var form = Assert.IsType<MultipartFormDataContent>(request.Content);
+                var fields = new Dictionary<string, string>();
+                foreach (var part in form)
+                    fields[part.Headers.ContentDisposition!.Name!.Trim('"')] = await part.ReadAsStringAsync();
+                Assert.Equal(id.ToString(), fields["recordingId"]);
+                Assert.Equal(date.ToString("O"), fields["capturedAt"]);
+                return new HttpResponseMessage(HttpStatusCode.Created) { Content = new StringContent($"{{\"id\":\"{Guid.NewGuid()}\",\"processingState\":\"COMPLETED\"}}") };
+            }));
+            var api = new LifeOsApiClient(http, new("https://lifeos.test/"));
+            await Assert.ThrowsAsync<HttpRequestException>(() => api.UploadAudioAsync(path, id, date, () => { }, default));
+            Assert.True(File.Exists(path));
+        }
+        finally { File.Delete(path); }
+    }
+
     private sealed class Handler(Func<HttpRequestMessage, Task<HttpResponseMessage>> action) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) => action(request);

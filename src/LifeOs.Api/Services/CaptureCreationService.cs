@@ -12,18 +12,24 @@ public sealed class CaptureCreationService(LifeOsDbContext db, ILifeOsLlmService
     TimeProvider clock, ILoggerFactory loggerFactory)
 {
     public async Task<IResult> CreateFromTextAsync(string text, CaptureSource source,
-        DateTimeOffset? capturedAt, CancellationToken cancellationToken)
+        DateTimeOffset? capturedAt, CancellationToken cancellationToken, Guid? recordingId = null)
     {
         var log = loggerFactory.CreateLogger("Captures");
         var now = clock.GetUtcNow();
         var capture = new Capture
         {
+            Id = recordingId ?? Guid.NewGuid(),
             RawText = text, Source = source, CreatedAt = now,
             CapturedAt = capturedAt?.ToUniversalTime() ?? now, ProcessingState = ProcessingState.PENDING
         };
         log.LogInformation("Capture received {CaptureId}, source {Source}", capture.Id, capture.Source);
         db.Captures.Add(capture);
-        await db.SaveChangesAsync(cancellationToken);
+        try { await db.SaveChangesAsync(cancellationToken); }
+        catch (DbUpdateException e) when (recordingId.HasValue && e.InnerException is Npgsql.PostgresException { SqlState: "23505" })
+        {
+            db.Entry(capture).State = EntityState.Detached;
+            return (await FindRecordingAsync(recordingId.Value, capturedAt!.Value, cancellationToken))!;
+        }
         log.LogInformation("Capture persisted {CaptureId}", capture.Id);
         try
         {
@@ -55,5 +61,16 @@ public sealed class CaptureCreationService(LifeOsDbContext db, ILifeOsLlmService
                 extensions: new Dictionary<string, object?> { ["captureId"] = capture.Id, ["rawCaptureSaved"] = true });
         }
         return Results.Created("/api/captures", capture);
+    }
+
+    public async Task<IResult?> FindRecordingAsync(Guid id, DateTimeOffset capturedAt, CancellationToken ct)
+    {
+        var existing = await db.Captures.AsNoTracking().SingleOrDefaultAsync(c => c.Id == id, ct);
+        if (existing is null) return null;
+        if (existing.Source != CaptureSource.VOICE || Math.Abs((existing.CapturedAt - capturedAt).TotalMilliseconds) >= 1)
+            return Results.Conflict(new { message = "Identyfikator należy do innego nagrania." });
+        // Even PENDING has its original transcription committed. Never create another copy,
+        // and never restore a deliberately deleted note on an upload retry.
+        return Results.Created("/api/captures", existing);
     }
 }

@@ -45,7 +45,7 @@ public static class AudioEndpoints
             {
                 MultipartBodyLengthLimit = MaxRequestBytes,
                 ValueLengthLimit = 1024,
-                ValueCountLimit = 1,
+                ValueCountLimit = 3,
                 MultipartHeadersLengthLimit = 4096
             }, cancellationToken);
         }
@@ -53,6 +53,20 @@ public static class AudioEndpoints
         catch (BadHttpRequestException e) when (e.StatusCode == 413) { return TooLarge(); }
         if (form.Files.Count != 1 || form.Files[0].Name != "file")
             return Invalid("Prześlij dokładnie jeden plik w polu file.");
+        Guid? recordingId = null;
+        DateTimeOffset? capturedAt = null;
+        if (form.ContainsKey("recordingId") || form.ContainsKey("capturedAt"))
+        {
+            if (form["recordingId"].Count != 1 || form["capturedAt"].Count != 1 ||
+                !Guid.TryParse(form["recordingId"], out var id) || id == Guid.Empty ||
+                !DateTimeOffset.TryParseExact(form["capturedAt"], "O", System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.None, out var date))
+                return Invalid("Wymagane są recordingId oraz capturedAt w formacie ISO 8601 z przesunięciem strefy.");
+            recordingId = id;
+            capturedAt = date.ToUniversalTime();
+            var existing = await captures.FindRecordingAsync(id, date, cancellationToken);
+            if (existing is not null) return existing;
+        }
         var file = form.Files[0];
         if (file.Length == 0) return Invalid("Nagranie jest puste.");
         if (file.Length > MaxFileBytes) return TooLarge();
@@ -73,7 +87,7 @@ public static class AudioEndpoints
             if (string.IsNullOrWhiteSpace(text))
                 throw new TranscriptionException("Nie wykryto mowy. Notatka nie została utworzona. Nagraj ponownie.", noSpeech: true);
             log.LogInformation("Transcription completed");
-            return await captures.CreateFromTextAsync(text, CaptureSource.VOICE, null, cancellationToken);
+            return await captures.CreateFromTextAsync(text, CaptureSource.VOICE, capturedAt, cancellationToken, recordingId);
         }
         catch (TranscriptionException e)
         {
@@ -88,5 +102,7 @@ public static class AudioEndpoints
     public sealed class AudioUploadRequest
     {
         public required IFormFile File { get; init; }
+        public Guid? RecordingId { get; init; }
+        public DateTimeOffset? CapturedAt { get; init; }
     }
 }

@@ -181,6 +181,28 @@ public sealed class UiTests
         page.WaitForAssertion(() => Assert.Equal($"/api/review?period={period}", paths.Last()));
     }
 
+    [Fact]
+    public void CustomDatesAreSentAndReversedDatesAreBlocked()
+    {
+        var paths = new List<string>();
+        using var context = Context(request =>
+        {
+            paths.Add(request.RequestUri!.PathAndQuery);
+            return Task.FromResult(Json(WeeklyReview.From(DateTimeOffset.UtcNow.AddDays(-7), DateTimeOffset.UtcNow, ReviewContent.Empty)));
+        });
+        var page = context.RenderComponent<Week>();
+        page.Find("select").Change("custom");
+        page.Find("#review-from").Change("2026-01-10");
+        page.Find("#review-to").Change("2026-01-12");
+        page.Find("button").Click();
+        page.WaitForAssertion(() => Assert.Equal("/api/review?period=custom&from=2026-01-10&to=2026-01-12", Assert.Single(paths)));
+        page.Find("#review-from").Change("2026-01-13");
+        Assert.Empty(page.FindAll(".review-grid"));
+        page.Find("button").Click();
+        Assert.Single(paths);
+        Assert.Contains("poprawne daty", page.Find("[role=alert]").TextContent);
+    }
+
     private static Capture Sample => new()
     {
         RawText = "  Oryginał bez zmian\nżółć  ", Title = "Spokój po medytacji", Summary = "Chwila spokoju.",

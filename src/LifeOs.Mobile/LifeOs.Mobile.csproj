@@ -12,8 +12,8 @@
     <Nullable>enable</Nullable>
     <ApplicationTitle>Life OS</ApplicationTitle>
     <ApplicationId>pl.lifeos.mobile</ApplicationId>
-    <ApplicationDisplayVersion>0.2.2</ApplicationDisplayVersion>
-    <ApplicationVersion>4</ApplicationVersion>
+    <ApplicationDisplayVersion>0.3.0</ApplicationDisplayVersion>
+    <ApplicationVersion>5</ApplicationVersion>
     <SupportedOSPlatformVersion>26.0</SupportedOSPlatformVersion>
     <AndroidPackageFormats>apk</AndroidPackageFormats>
     <EmbedAssembliesIntoApk>true</EmbedAssembliesIntoApk>

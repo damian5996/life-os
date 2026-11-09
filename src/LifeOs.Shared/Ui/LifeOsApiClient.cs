@@ -21,8 +21,8 @@ public sealed class LifeOsApiClient(IHttpClientFactory factory, NavigationManage
     public Task DeleteCaptureAsync(Guid id) => SendAsync<object>(HttpMethod.Delete, $"api/captures/{id}", noContent: true);
     public Task RestoreCaptureAsync(Guid id) => SendAsync<object>(HttpMethod.Post, $"api/captures/{id}/restore", noContent: true);
 
-    public Task<WeeklyReview> GenerateReviewAsync(string period = "week") => SendAsync<WeeklyReview>(HttpMethod.Post,
-        "api/review?period=" + Uri.EscapeDataString(period), ClientJsonContext.Default.WeeklyReview);
+    public Task<WeeklyReview> GenerateReviewAsync(string period = "week", DateOnly? from = null, DateOnly? to = null) => SendAsync<WeeklyReview>(HttpMethod.Post,
+        "api/review?period=" + Uri.EscapeDataString(period) + (period == "custom" ? $"&from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}" : ""), ClientJsonContext.Default.WeeklyReview);
 
     public async Task<ExportFile> DownloadExportAsync(string format, CaptureType? type, bool deleted)
     {

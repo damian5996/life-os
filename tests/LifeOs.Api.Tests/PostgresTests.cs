@@ -11,6 +11,36 @@ namespace LifeOs.Api.Tests;
 public sealed class PostgresTests
 {
     [PostgresFact]
+    public async Task ConcurrentRecordingInsertUsesPrimaryKeyAndPreservesOriginalDate()
+    {
+        using var app = new TestApp(postgres: Environment.GetEnvironmentVariable("LIFEOS_TEST_POSTGRES"));
+        using var firstScope = app.Services.CreateScope();
+        using var secondScope = app.Services.CreateScope();
+        var db = firstScope.ServiceProvider.GetRequiredService<LifeOsDbContext>();
+        await db.Database.MigrateAsync();
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        app.Llm.BeforeClassify = async _ => { entered.TrySetResult(); await release.Task; };
+        var id = Guid.NewGuid();
+        var date = DateTimeOffset.Parse("2026-03-29T01:59:59.1234567+01:00");
+        var first = firstScope.ServiceProvider.GetRequiredService<LifeOs.Api.Services.CaptureCreationService>()
+            .CreateFromTextAsync("Test offline", CaptureSource.VOICE, date, default, id);
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        try
+        {
+            var second = await secondScope.ServiceProvider.GetRequiredService<LifeOs.Api.Services.CaptureCreationService>()
+                .CreateFromTextAsync("Test offline", CaptureSource.VOICE, date, default, id);
+            Assert.Equal(201, Assert.IsAssignableFrom<Microsoft.AspNetCore.Http.IStatusCodeHttpResult>(second).StatusCode);
+        }
+        finally { release.TrySetResult(); }
+        await first;
+        var capture = Assert.Single(await app.Captures(), x => x.Id == id);
+        Assert.True(Math.Abs((capture.CapturedAt - date).TotalMicroseconds) < 1);
+        Assert.Equal(ProcessingState.COMPLETED, capture.ProcessingState);
+        Assert.Equal(1, app.Llm.ClassificationCalls);
+    }
+
+    [PostgresFact]
     public async Task MigrationAndCaptureFlowRoundTripThroughPostgres()
     {
         // Use an empty disposable database: this test deliberately applies real migrations.

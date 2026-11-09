@@ -31,7 +31,11 @@ public static class MauiProgram
         builder.Services.AddSingleton<ILifeOsApiClient, LifeOsApiClient>();
         builder.Services.AddSingleton<AudioRecorder>();
         builder.Services.AddSingleton<IAudioRecorder>(sp => sp.GetRequiredService<AudioRecorder>());
-        builder.Services.AddSingleton<CaptureSession>();
+        builder.Services.AddSingleton(_ => new RecordingQueue(Path.Combine(FileSystem.AppDataDirectory, "recordings")));
+        builder.Services.AddSingleton(sp => new CaptureSession(sp.GetRequiredService<IAudioRecorder>(),
+            sp.GetRequiredService<ILifeOsApiClient>(), sp.GetRequiredService<RecordingQueue>(),
+            () => Connectivity.Current.NetworkAccess == NetworkAccess.Internet,
+            action => MainThread.BeginInvokeOnMainThread(action), TimeProvider.System));
         builder.Services.AddSingleton<MainPage>();
         builder.Services.AddSingleton<NotebookPage>();
         builder.Services.AddSingleton<RecordingPage>();

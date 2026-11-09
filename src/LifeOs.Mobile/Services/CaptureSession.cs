@@ -1,121 +1,114 @@
 namespace LifeOs.Mobile.Services;
 
-// Singleton owns workflow state across page/activity recreation; no upload queue or database.
 public sealed class CaptureSession
 {
-    private const string PendingKey = "pending-audio";
     private readonly IAudioRecorder recorder;
     private readonly ILifeOsApiClient api;
+    private readonly RecordingQueue queue;
+    private readonly Func<bool> online;
+    private readonly Action<Action> dispatch;
+    private readonly TimeProvider clock;
+    private QueuedRecording? active;
     public event Action? Changed;
     public bool Busy { get; private set; }
     public bool IsRecording => recorder.IsRecording;
     public TimeSpan Elapsed => recorder.Elapsed;
-    public string Status { get; private set; } = "Gotowe do nagrania";
-    public string? PendingPath { get; private set; }
-    public bool CanRetry => !Busy && !IsRecording && PendingPath is not null;
+    public bool IsOnline => online();
+    public IReadOnlyList<QueuedRecording> Pending => queue.Pending.Where(x => x.Id != active?.Id).ToArray();
+    public bool CanRetry => !Busy && !IsRecording && Pending.Count > 0;
+    public string Status { get; private set; } = "Gotowe do nagrania — także bez internetu";
 
-    public CaptureSession(IAudioRecorder recorder, ILifeOsApiClient api)
+    public CaptureSession(IAudioRecorder recorder, ILifeOsApiClient api, RecordingQueue queue,
+        Func<bool> online, Action<Action> dispatch, TimeProvider clock)
     {
-        this.recorder = recorder;
-        this.api = api;
-        var pending = Preferences.Default.Get(PendingKey, "");
-        if (File.Exists(pending))
+        this.recorder = recorder; this.api = api; this.queue = queue;
+        this.online = online; this.dispatch = dispatch; this.clock = clock;
+        recorder.Interrupted += message => dispatch(() =>
         {
-            PendingPath = pending;
-            Status = "Pozostało niewysłane nagranie. Po przerwaniu aplikacji plik może być niepełny. " +
-                "Przed ponowieniem sprawdź, czy notatka jest już na serwerze.";
-        }
-        recorder.Interrupted += message => MainThread.BeginInvokeOnMainThread(() =>
-        {
-            Status = message;
-            Changed?.Invoke();
+            if (active is not null) { queue.Ready(active, message); active = null; }
+            Status = message; Changed?.Invoke();
         });
     }
-
     public async Task StartAsync()
     {
-        if (Busy || IsRecording || PendingPath is not null) return;
-        Busy = true;
-        Changed?.Invoke();
+        if (Busy || IsRecording) return;
+        Busy = true; Changed?.Invoke();
         try
         {
-            var folder = Path.Combine(FileSystem.AppDataDirectory, "recordings");
-            Directory.CreateDirectory(folder);
-            PendingPath = Path.Combine(folder, $"{Guid.NewGuid():N}.m4a");
-            Preferences.Default.Set(PendingKey, PendingPath);
-            await recorder.StartAsync(PendingPath);
+            active = queue.Begin(clock.GetUtcNow());
+            await recorder.StartAsync(queue.AudioPath(active));
             Status = "Nagrywanie — możesz robić przerwy w mówieniu";
         }
         catch
         {
             Status = "Nie udało się rozpocząć nagrywania. Sprawdź dostęp do mikrofonu.";
-            if (!File.Exists(PendingPath)) ClearPending();
+            if (active is not null)
+            {
+                if (File.Exists(queue.AudioPath(active))) queue.Ready(active, Status);
+                else queue.Remove(active);
+                active = null;
+            }
         }
         finally { Busy = false; Changed?.Invoke(); }
     }
-
     public async Task StopAndUploadAsync()
     {
-        if (Busy || !IsRecording) return;
-        Busy = true;
-        Status = "Kończenie nagrania...";
-        Changed?.Invoke();
+        if (Busy || !IsRecording || active is null) return;
+        Busy = true; Status = "Kończenie nagrania..."; Changed?.Invoke();
+        var item = active;
         try
         {
             await recorder.StopAsync();
-            await UploadAsync();
+            queue.Ready(item); active = null;
+            if (IsOnline) await UploadAsync(item);
+            else Status = "Zapisano na telefonie. Po połączeniu z internetem naciśnij „Synchronizuj”.";
         }
-        catch (Exception e) { SetFailure(e); }
+        catch (Exception error) { Failure(item, error); active = null; }
         finally { Busy = false; Changed?.Invoke(); }
     }
-
     public async Task RetryAsync()
     {
         if (!CanRetry) return;
-        Busy = true;
-        Changed?.Invoke();
-        try { await UploadAsync(); }
-        catch (Exception e) { SetFailure(e); }
+        if (!IsOnline) { Status = "Brak internetu. Nagrania czekają na telefonie."; Changed?.Invoke(); return; }
+        Busy = true; Changed?.Invoke();
+        try
+        {
+            foreach (var item in Pending.ToArray())
+            {
+                if (!IsOnline) break;
+                try { await UploadAsync(item); }
+                catch (Exception error) { Failure(item, error); }
+            }
+            Status = Pending.Count == 0 ? "✓ Wszystkie nagrania zsynchronizowane" :
+                $"Pozostało nagrań: {Pending.Count}. Szczegóły poniżej. Naciśnij „Synchronizuj”, aby ponowić.";
+        }
         finally { Busy = false; Changed?.Invoke(); }
     }
-
-    public void KeepFileAndStartFresh()
+    public void Remove(QueuedRecording item)
     {
-        if (!CanRetry) return;
-        // Keep the old private file. Only release the single pending UI slot.
-        ClearPending();
-        Status = "Poprzedni plik pozostał na telefonie. Gotowe do nowego nagrania.";
+        if (Busy || IsRecording) return;
+        try { queue.Remove(item); Status = "Usunięto lokalne nagranie."; }
+        catch (IOException) { Status = "Nie udało się usunąć pliku."; }
         Changed?.Invoke();
     }
-
-    private async Task UploadAsync()
+    private async Task UploadAsync(QueuedRecording item)
     {
-        Status = "Wysyłanie...";
-        Changed?.Invoke();
+        Status = "Wysyłanie..."; Changed?.Invoke();
         using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(11));
-        var result = await api.UploadAudioAsync(PendingPath!, () => MainThread.BeginInvokeOnMainThread(() =>
+        var result = await api.UploadAudioAsync(queue.AudioPath(item), item.Id, item.CapturedAt, () => dispatch(() =>
+        { Status = "Transkrypcja i analiza..."; Changed?.Invoke(); }), timeout.Token);
+        queue.Complete(item);
+        Status = result.ProcessingState switch
         {
-            if (!Busy) return;
-            Status = "Transkrypcja i analiza...";
-            Changed?.Invoke();
-        }), timeout.Token);
-        Status = result.ProcessingState == "COMPLETED" ? "✓ Zapisano" : "✓ Zapisano — analiza AI nie powiodła się. Oryginał jest na serwerze.";
-        try { File.Delete(PendingPath!); }
-        catch (IOException) { Status += " Nie udało się usunąć lokalnej kopii."; }
-        catch (UnauthorizedAccessException) { Status += " Nie udało się usunąć lokalnej kopii."; }
-        ClearPending();
+            "COMPLETED" => "✓ Zapisano",
+            "PENDING" => "✓ Zapisano — analiza jest w toku",
+            _ => "✓ Zapisano — analiza AI nie powiodła się. Oryginał jest na serwerze."
+        };
     }
-
-    private void ClearPending() { PendingPath = null; Preferences.Default.Remove(PendingKey); }
-    private void SetFailure(Exception error)
+    private void Failure(QueuedRecording item, Exception error)
     {
-        if (error is NoSpeechDetectedException)
-        {
-            Status = error.Message;
-            return;
-        }
-        Status = "Nie udało się zapisać notatki. Nagranie pozostało na telefonie. " +
-            (error is InvalidOperationException ? error.Message :
-                "Sprawdź połączenie i zapis na serwerze przed ponowieniem, aby uniknąć duplikatu.");
+        Status = error is InvalidOperationException ? error.Message :
+            "Nie udało się wysłać nagrania. Plik pozostał na telefonie. Ponów synchronizację po sprawdzeniu połączenia.";
+        queue.Ready(item, Status); Changed?.Invoke();
     }
 }

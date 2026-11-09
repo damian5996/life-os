@@ -11,9 +11,17 @@
         <option value="week">Tydzień</option>
         <option value="month">Miesiąc</option>
         <option value="six-months">6 miesięcy</option>
+        <option value="custom">Własny zakres dat</option>
     </select>
+    @if (period == "custom")
+    {
+        <label for="review-from">Od</label>
+        <input id="review-from" type="date" @bind="from" @bind:after="ClearReview" max="@Today.ToString("yyyy-MM-dd")" disabled="@generating" />
+        <label for="review-to">Do (włącznie)</label>
+        <input id="review-to" type="date" @bind="to" @bind:after="ClearReview" max="@Today.ToString("yyyy-MM-dd")" disabled="@generating" />
+    }
     <button class="primary" disabled="@generating" @onclick="Generate">@(generating ? "Generowanie podsumowania…" : "Wygeneruj podsumowanie")</button>
-    <p class="muted">Na podstawie ukończonych notatek z wybranego okresu, liczonego wstecz od teraz. Notatki z kosza są pomijane.</p></div>
+    <p class="muted">@(period == "custom" ? "Wybrane dni włącznie, według czasu polskiego." : "Wybrany okres liczony wstecz od teraz.") Na podstawie ukończonych notatek. Notatki z kosza są pomijane.</p></div>
 @if (generating) { <p class="notice" role="status">Przygotowuję podsumowanie. To może potrwać chwilę.</p> }
 @if (error is not null) { <p class="notice warning" role="alert">@error</p> }
 @if (review is not null) { <ReviewResult Review="review" /> }
@@ -27,12 +35,17 @@ else if (!generating && error is null)
     private bool generating;
     private string? error;
     private string period = "week";
+    private static DateOnly Today => DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, TimeZoneInfo.FindSystemTimeZoneById("Europe/Warsaw")).DateTime);
+    private DateOnly? from = Today.AddDays(-7);
+    private DateOnly? to = Today;
     private void ClearReview() { review = null; error = null; }
     private async Task Generate()
     {
         if (generating) return;
+        if (period == "custom" && (from is null || to is null || from > to || to > Today))
+        { error = "Wybierz poprawne daty od–do, nie późniejsze niż dzisiaj."; review = null; return; }
         generating = true; error = null; review = null;
-        try { review = await Api.GenerateReviewAsync(period); }
+        try { review = await Api.GenerateReviewAsync(period, from, to); }
         catch (UiApiException e) { error = e.Message; }
         finally { generating = false; }
     }

@@ -10,7 +10,10 @@ public sealed class RecordingPage : ContentPage
     private readonly Label duration = new() { Text = "00:00", FontSize = 40, HorizontalTextAlignment = TextAlignment.Center, TextColor = Colors.Black };
     private readonly Label status = new() { HorizontalTextAlignment = TextAlignment.Center, FontSize = 17, TextColor = Colors.Black };
     private readonly Button settings = new() { Text = "Otwórz ustawienia mikrofonu", IsVisible = false };
-    private readonly Button fresh = new() { Text = "Zachowaj plik i nagraj nowe", IsVisible = false };
+    private readonly Button sync = new() { Text = "Synchronizuj" };
+    private readonly Label connection = new() { TextColor = Color.FromArgb("65756D") };
+    private readonly VerticalStackLayout pending = new() { Spacing = 16 };
+    private string? renderedQueue;
     private readonly IDispatcherTimer timer;
     private readonly TaskCompletionSource loaded = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private bool requestingPermission;
@@ -29,21 +32,16 @@ public sealed class RecordingPage : ContentPage
                 HorizontalTextAlignment = TextAlignment.Center, TextColor = Color.FromArgb("173C35") },
                 new Label { Text = "Powiedz, co chcesz zapamiętać. Life OS uporządkuje Twoją notatkę.",
                     TextColor = Color.FromArgb("65756D"), HorizontalTextAlignment = TextAlignment.Center },
-                record, duration, status, settings, fresh }
+                record, duration, status, settings, connection, sync, pending }
         }};
         record.HorizontalOptions = LayoutOptions.Center;
         record.Clicked += async (_, _) =>
         {
             if (session.IsRecording) await session.StopAndUploadAsync();
-            else if (session.CanRetry)
-            {
-                if (await DisplayAlertAsync("Ponowić wysyłanie?", "Sprawdź najpierw, czy notatka jest już na serwerze. Ponowienie może utworzyć duplikat.", "Wyślij", "Anuluj"))
-                    await session.RetryAsync();
-            }
             else await StartRecordingAsync();
         };
         settings.Clicked += (_, _) => AppInfo.Current.ShowSettingsUI();
-        fresh.Clicked += async (_, _) => { session.KeepFileAndStartFresh(); await StartRecordingAsync(); };
+        sync.Clicked += async (_, _) => await session.RetryAsync();
         session.Changed += Refresh;
         timer = Dispatcher.CreateTimer();
         timer.Interval = TimeSpan.FromSeconds(1);
@@ -56,7 +54,7 @@ public sealed class RecordingPage : ContentPage
     {
         await loaded.Task;
         // A widget never stops a recording, retries an upload, or overwrites a retained file.
-        if (!session.IsRecording && !session.Busy && !session.CanRetry) await StartRecordingAsync();
+        if (!session.IsRecording && !session.Busy) await StartRecordingAsync();
         Refresh();
     }
 
@@ -88,9 +86,33 @@ public sealed class RecordingPage : ContentPage
     protected override void OnDisappearing() { timer.Stop(); base.OnDisappearing(); }
     private void Refresh()
     {
-        record.Text = session.IsRecording ? "⏹ Zatrzymaj" : session.CanRetry ? "Ponów wysyłanie" : "🎙️ Nagraj";
+        record.Text = session.IsRecording ? "⏹ Zatrzymaj" : "🎙️ Nagraj";
         record.IsEnabled = !session.Busy && !requestingPermission;
-        fresh.IsVisible = session.CanRetry;
+        var items = session.Pending;
+        sync.IsVisible = items.Count > 0;
+        sync.Text = $"Synchronizuj ({items.Count})";
+        sync.IsEnabled = session.CanRetry && session.IsOnline;
+        connection.Text = session.IsOnline ? "Internet dostępny. Zaległe nagrania wyślesz przyciskiem „Synchronizuj”." :
+            "Tryb offline — nagrania pozostaną na telefonie do synchronizacji.";
+        var fingerprint = string.Join("|", items.Select(x => $"{x.Id}:{x.Error}")) + session.Busy + session.IsRecording;
+        if (fingerprint != renderedQueue)
+        {
+            renderedQueue = fingerprint;
+            pending.Children.Clear();
+            foreach (var item in items)
+            {
+                pending.Children.Add(new Label { Text = LifeOs.Api.Ui.PolishLabels.Date(item.CapturedAt) + " · czeka na wysłanie",
+                    FontAttributes = FontAttributes.Bold, TextColor = Colors.Black });
+                if (item.Error is not null) pending.Children.Add(new Label { Text = item.Error, TextColor = Color.FromArgb("8B4513") });
+                var remove = new Button { Text = "Usuń nagranie z telefonu", IsEnabled = !session.Busy && !session.IsRecording };
+                remove.Clicked += async (_, _) =>
+                {
+                    if (await DisplayAlertAsync("Usunąć nagranie?", "Lokalny plik zostanie trwale usunięty. Tej operacji nie można cofnąć.", "Usuń", "Anuluj"))
+                        session.Remove(item);
+                };
+                pending.Children.Add(remove);
+            }
+        }
         duration.Text = $"{(int)session.Elapsed.TotalMinutes:00}:{session.Elapsed.Seconds:00}";
         if (!settings.IsVisible && !requestingPermission) status.Text = session.Status;
     }

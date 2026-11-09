@@ -8,15 +8,20 @@ namespace LifeOs.Mobile.Services;
 public interface ILifeOsApiClient
 {
     Task<CaptureResponse> UploadAudioAsync(string path, Action uploaded, CancellationToken cancellationToken);
+    Task<CaptureResponse> UploadAudioAsync(string path, Guid recordingId, DateTimeOffset capturedAt, Action uploaded, CancellationToken cancellationToken);
 }
 
 public sealed class NoSpeechDetectedException() : InvalidOperationException(
     "Nie wykryto mowy. Notatka nie została utworzona. Nagranie pozostało na telefonie. " +
-    "Wybierz „Zachowaj plik i nagraj nowe”, aby spróbować ponownie.");
+    "Możesz nagrać nową notatkę lub ponowić synchronizację.");
 
 public sealed class LifeOsApiClient(HttpClient http, ApiConfiguration config) : ILifeOsApiClient
 {
-    public async Task<CaptureResponse> UploadAudioAsync(string path, Action uploaded, CancellationToken cancellationToken)
+    public Task<CaptureResponse> UploadAudioAsync(string path, Action uploaded, CancellationToken cancellationToken) =>
+        UploadCoreAsync(path, null, null, uploaded, cancellationToken);
+    public Task<CaptureResponse> UploadAudioAsync(string path, Guid recordingId, DateTimeOffset capturedAt, Action uploaded, CancellationToken cancellationToken) =>
+        UploadCoreAsync(path, recordingId, capturedAt, uploaded, cancellationToken);
+    private async Task<CaptureResponse> UploadCoreAsync(string path, Guid? recordingId, DateTimeOffset? capturedAt, Action uploaded, CancellationToken cancellationToken)
     {
         if (!Uri.TryCreate(config.ApiBaseUrl, UriKind.Absolute, out var baseUrl) ||
             baseUrl.Scheme is not ("http" or "https"))
@@ -29,6 +34,11 @@ public sealed class LifeOsApiClient(HttpClient http, ApiConfiguration config) : 
             throw new InvalidOperationException("Nagranie musi mieć od 1 bajta do 25 MB. Plik pozostaje na telefonie.");
         await using var stream = File.OpenRead(path);
         using var form = new MultipartFormDataContent();
+        if (recordingId.HasValue)
+        {
+            form.Add(new StringContent(recordingId.Value.ToString("D")), "recordingId");
+            form.Add(new StringContent(capturedAt!.Value.ToString("O", System.Globalization.CultureInfo.InvariantCulture)), "capturedAt");
+        }
         var audio = new UploadContent(stream, uploaded);
         audio.Headers.ContentType = new MediaTypeHeaderValue("audio/mp4");
         form.Add(audio, "file", "capture.m4a");
@@ -39,7 +49,8 @@ public sealed class LifeOsApiClient(HttpClient http, ApiConfiguration config) : 
             throw new HttpRequestException("Nie udało się zapisać notatki. Nagranie zostało na telefonie. " +
                 "Przed ponowieniem sprawdź zapis na serwerze — mógł zakończyć się mimo błędu połączenia.");
         var capture = await response.Content.ReadFromJsonAsync(MobileJsonContext.Default.CaptureResponse, cancellationToken);
-        if (capture is null || capture.Id == Guid.Empty || capture.ProcessingState is not ("COMPLETED" or "FAILED"))
+        if (capture is null || capture.Id == Guid.Empty || (recordingId.HasValue && capture.Id != recordingId) ||
+            (capture.ProcessingState is not ("COMPLETED" or "FAILED") && !(recordingId.HasValue && capture.ProcessingState == "PENDING")))
             throw new HttpRequestException("Nieprawidłowe potwierdzenie zapisu. Nagranie pozostało na telefonie.");
         return capture;
     }

@@ -104,19 +104,36 @@ public static class LifeOsEndpoints
         return Results.NoContent();
     }
     private static async Task<IResult> GenerateReview(LifeOsDbContext db, ILifeOsLlmService llm,
-        TimeProvider clock, ILoggerFactory loggerFactory, CancellationToken cancellationToken, string period = "week")
+        TimeProvider clock, ILoggerFactory loggerFactory, CancellationToken cancellationToken, string period = "week",
+        string? from = null, string? to = null)
     {
         var end = clock.GetUtcNow();
-        if (period is not ("week" or "month" or "six-months"))
-            return InvalidQuery("period: week, month lub six-months.");
+        if (period is not ("week" or "month" or "six-months" or "custom"))
+            return InvalidQuery("period: week, month, six-months lub custom.");
         var start = period switch
         {
             "month" => end.AddMonths(-1),
             "six-months" => end.AddMonths(-6),
             _ => end.AddDays(-7)
         };
+        var queryEnd = end;
+        var exclusiveEnd = DateTimeOffset.MaxValue;
+        if (period == "custom")
+        {
+            var zone = TimeZoneInfo.FindSystemTimeZoneById("Europe/Warsaw");
+            var today = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(end, zone).DateTime);
+            if (!DateOnly.TryParseExact(from, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.None, out var first) ||
+                !DateOnly.TryParseExact(to, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.None, out var last) || first > last || last > today)
+                return InvalidQuery("Wybierz poprawne daty od–do, nie późniejsze niż dzisiaj.");
+            start = new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(first.ToDateTime(TimeOnly.MinValue), zone));
+            exclusiveEnd = new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(last.AddDays(1).ToDateTime(TimeOnly.MinValue), zone));
+            if (exclusiveEnd <= end) end = exclusiveEnd.AddTicks(-1);
+        }
+        else if (from is not null || to is not null) return InvalidQuery("Daty od–do wymagają period=custom.");
         var captures = await db.Captures.AsNoTracking()
-            .Where(c => c.DeletedAt == null && c.ProcessingState == ProcessingState.COMPLETED && c.CapturedAt >= start && c.CapturedAt <= end)
+            .Where(c => c.DeletedAt == null && c.ProcessingState == ProcessingState.COMPLETED && c.CapturedAt >= start && c.CapturedAt <= queryEnd && c.CapturedAt < exclusiveEnd)
             .OrderBy(c => c.CapturedAt).ToListAsync(cancellationToken);
         try
         {
