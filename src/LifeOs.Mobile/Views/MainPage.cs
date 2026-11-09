@@ -19,7 +19,11 @@ public sealed class MainPage : Microsoft.Maui.Controls.TabbedPage
         UnselectedTabColor = Color.FromArgb("65756D");
         Children.Add(notebook);
         Children.Add(recording);
-        On<Microsoft.Maui.Controls.PlatformConfiguration.Android>().SetToolbarPlacement(ToolbarPlacement.Bottom);
+        // A slightly diagonal vertical swipe must stay with the WebView. Otherwise
+        // the tab pager sends touchcancel and cuts off the native scroll momentum.
+        On<Microsoft.Maui.Controls.PlatformConfiguration.Android>()
+            .SetToolbarPlacement(ToolbarPlacement.Bottom)
+            .SetIsSwipePagingEnabled(false);
         // Opening the notification or a retained recording should surface its controls.
         if (session.IsRecording || session.CanRetry || session.Busy) CurrentPage = recording;
     }

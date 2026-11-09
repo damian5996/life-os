@@ -118,6 +118,8 @@ the selected scope into a private cache directory and opens Android's share shee
 the user chooses a destination. It needs no broad storage permission. Export files
 remain in app cache so the receiving application can read them; the OS may evict them.
 The **Nagraj** tab keeps the original native recorder, foreground service and retry flow.
+Switch native tabs using the bottom buttons. Horizontal swipe paging is disabled so
+slightly diagonal vertical gestures remain with the WebView and retain scroll momentum.
 Widget launches select that tab before requesting recording. Returning from recording
 refreshes the notes list; an open text draft or details view is preserved. There is
 also an explicit refresh button on the shared notes page.
@@ -246,6 +248,22 @@ Keep normal capture as tap → talk → stop → saved.
 
 ## Verification in this workspace
 
+### Android scroll gestures — 2026-11-09
+
+- On Samsung SM-S938B, a mostly vertical 110 ms swipe with 150 px of horizontal drift
+  triggered `touchcancel` in the original TabbedPage. The page moved only 71 CSS px,
+  with no momentum after release. A straight vertical swipe already worked correctly.
+- Disabled Android swipe paging; navigation through the bottom tab buttons is retained.
+  The identical diagonal gesture now ends with `touchend`, moves 1288 CSS px and continues
+  for about 1091 ms after release. Straight up/down gestures retain approximately 1070 ms
+  of momentum. The maximum sampled animation frame interval was 17 ms in these runs.
+- Measurements used the Debug WebView tools on the physical phone, without reading note
+  content. WebView developer tools are registered only in Debug builds.
+- Debug and Release builds passed without warnings/errors. Release 0.2.1 (version code 3)
+  was installed with existing app data retained and cold-launched without runtime errors.
+  Both bottom tab buttons were verified on the device. The diagnostic ADB forwarding was
+  removed, and the installed Release package is not debuggable.
+
 ### Deployed shared interface — 2026-11-08
 
 - 103 API/shared UI tests and 7 mobile upload tests passed. The PostgreSQL integration
@@ -268,8 +286,8 @@ Keep normal capture as tap → talk → stop → saved.
   and took several minutes to restart. The final public readiness check passed. Approved
   manual runtime diagnostics confirmed .NET 10, the expected startup command and successful
   startup; configuration values and complete application logs were not printed.
-- A fresh microphone recording and its appearance in Notes still require user confirmation;
-  the broader device acceptance checklist above was not repeated in full.
+- The user confirmed a fresh microphone recording was saved and appeared in Notes.
+  The broader device acceptance checklist above was not repeated in full.
 
 ### Shared interface — 2026-10-20
 

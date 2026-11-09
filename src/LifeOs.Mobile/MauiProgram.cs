@@ -11,6 +11,9 @@ public static class MauiProgram
     {
         var builder = MauiApp.CreateBuilder().UseMauiApp<App>();
         builder.Services.AddMauiBlazorWebView();
+#if DEBUG
+        builder.Services.AddBlazorWebViewDeveloperTools();
+#endif
         using var stream = typeof(MauiProgram).Assembly.GetManifestResourceStream("LifeOs.Mobile.appsettings.json")!;
         var config = JsonSerializer.Deserialize(stream, MobileJsonContext.Default.ApiConfiguration)!;
         builder.Services.AddSingleton(config);
