@@ -8,6 +8,13 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      confirmation:
+        description: 'Wpisz DEPLOY PRODUCTION po testach Dev i akceptacji wydania'
+        required: true
+        type: string
+  pull_request:
+    branches: [main]
 
 jobs:
   build:
@@ -40,6 +47,7 @@ jobs:
           if-no-files-found: error
 
   deploy:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.confirmation == 'DEPLOY PRODUCTION'
     runs-on: ubuntu-latest
     needs: build
     permissions:
