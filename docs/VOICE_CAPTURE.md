@@ -386,3 +386,23 @@ To build with it without changing the system-wide .NET installation:
 
 The APK supports ARM64 phones and x64 emulators; it embeds assemblies for direct
 `adb install` use. Older 32-bit ARM devices are not included in this MVP build.
+
+### Offline queue and custom review dates — verified 2026-11-09
+
+- Custom review dates include both selected Polish calendar days, with Europe/Warsaw
+  daylight-saving transitions covered by tests.
+- All 119 backend/shared UI tests passed with a disposable PostgreSQL database,
+  including concurrent inserts with the same recording UUID. All 14 mobile tests passed.
+- Android Release 0.3.0 (version code 5) built with zero warnings/errors and was installed
+  on Samsung SM-S938B. The network-state permission and recording screen were verified.
+- Backend commit `dd53ba0` deployed successfully in GitHub Actions run `42647326630`.
+  A synthetic speech upload to Azure retained its original recording date; retry returned
+  the same UUID, and a custom review of that Polish calendar day included the note.
+  Synthetic test notes were moved to trash. Timestamp assertions account for PostgreSQL's
+  microsecond precision.
+- The user confirmed that two offline recordings survived reopening the app, then
+  synchronized successfully after reconnecting and pressing Synchronizuj. Both appeared
+  in notes with their recording dates and disappeared from the queue.
+- A third retained recording from the old version was recovered. Legacy files use file
+  creation time; their prior server-save status cannot be inferred, so users should check
+  for an existing note before sending them again. New recordings have stable UUIDs.
