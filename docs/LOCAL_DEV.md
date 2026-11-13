@@ -75,6 +75,35 @@ generować koszty API; lokalny backend nie wymaga hostingu Azure.
   Można wczytać aktywne lub domyślne ustawienia do szkicu. Pełna historia wcześniejszych
   promptów nie jest jeszcze archiwizowana.
 
+## Jak testować transkrypcję na telefonie
+
+1. Uruchom Docker Desktop. W PowerShell przejdź do `C:\repos\my-apps\LifeOS`.
+2. Jeśli klucz nie jest jeszcze skonfigurowany, uruchom `scripts/set-dev-key.ps1`.
+   Możesz użyć klucza z własnego konta OpenAI; magazyn Dev jest oddzielny od produkcji.
+   Bez klucza nagrywanie działa, ale transkrypcja nie będzie możliwa.
+3. Po zmianie klucza zrestartuj Dev: `scripts/stop-dev.ps1`, a następnie
+   `scripts/start-dev.ps1`. Skrypt startu buduje aktualny backend. Przy zwykłym starcie
+   wystarczy `scripts/start-dev.ps1`.
+4. Podłącz i odblokuj telefon, zaakceptuj debugowanie USB i uruchom
+   `scripts/connect-dev-phone.ps1`.
+5. Otwórz **LifeOS Dev** z fioletową ikoną → **Nagraj**. Zwykły LifeOS nadal wysyła do Azure.
+6. Nagraj 20–30 sekund: pełne polskie zdanie, „hmm”, „yyy”, „mhm”, pauzę około 5 sekund,
+   kolejne zdanie i terminy „.NET, Azure”. Naciśnij Stop. Przy działającym połączeniu
+   świeże nagranie wysyła się automatycznie; zaległe wyślesz przyciskiem Synchronizuj.
+7. Otwórz szczegóły w Notatkach i sprawdź **Oryginalną notatkę**, czyli transkrypcję,
+   nie tylko podsumowanie AI. Porównaj słowa, przerwy i brak koreańskich wstawek.
+   Osobno sprawdź krótką wypowiedź, cichą mowę oraz sekundę samej ciszy.
+
+Testuj na gałęzi `codex/dev-admin`. Poprawka transkrypcji jest wspólna z produkcją;
+panel kategorii/promptów zmienia późniejszą analizę tekstu, nie rozpoznawanie audio.
+Zgłaszając problem, podaj godzinę testu i czy użyto Dev, czy produkcji. Nie trzeba
+wklejać prywatnej treści. Do oceny konkretnego błędu potrzebny jest oryginalny dźwięk;
+same zrzuty nie pozwalają go odtworzyć. Udane nagrania są usuwane z telefonu po zapisie,
+więc do powtarzalnych prób najlepiej używać znanego, krótkiego tekstu testowego.
+
+W Dev sprawdź też wyłączenie internetu, ponowne uruchomienie aplikacji i ręczną
+synchronizację po odzyskaniu połączenia. Data notatki ma pozostać datą nagrania.
+
 ## Izolacja i publikacja
 
 - Compose: projekt `lifeos-local-dev`, wolumin `lifeos-local-dev_lifeos-dev-data`,
@@ -104,3 +133,12 @@ odpowiedzi testowych — zgodnie z decyzją użytkownika Dev nie ma klucza.
 Release APK zainstalowano obok LifeOS 0.3.0. Użytkownik potwierdził pasek Dev i zakładkę
 Administracja na telefonie. Workflow zabezpieczający produkcję przeszedł testy,
 a etap wdrożenia został pominięty.
+
+### Domknięcie 2026-11-13
+
+Zaległe zmiany zapisano na gałęzi `codex/dev-admin`. Dołączono poprawkę kontroli
+polskiej transkrypcji z produkcyjnego commitu `46bcc0d`; opis w
+[TRANSCRIPTION_QUALITY.md](TRANSCRIPTION_QUALITY.md). Przeszło 135 testów backendu/UI,
+2 dodatkowe testy PostgreSQL oraz 14 testów mobilnych. Jednorazową bazę testową usunięto;
+baza Dev zachowuje ustawienia. Klucz AI nadal pozostaje nieskonfigurowany zgodnie
+z wcześniejszą decyzją użytkownika — testy z prawdziwym głosem wymagają jego dodania.
