@@ -6,11 +6,112 @@ using LifeOs.Api.Endpoints;
 using LifeOs.Api.Llm;
 using LifeOs.Api.Models;
 using Microsoft.Extensions.Options;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace LifeOs.Api.Tests;
 
 public sealed class AudioTests
 {
+    [Theory]
+    [InlineData("Czuję zmęczenie. 음. No nic.")]
+    [InlineData("어 피사 찍다래요.")]
+    [InlineData("Hmm ᄋ ㅓ ﾡ")]
+    public async Task HangulRetriesOriginalAudioWithFallbackAndNoPrompt(string suspect)
+    {
+        var calls = 0;
+        var original = new byte[] { 1, 2, 3, 4 };
+        using var source = new MemoryStream(original);
+        using var http = new HttpClient(new Handler(async request =>
+        {
+            var fields = Assert.IsType<MultipartFormDataContent>(request.Content)
+                .ToDictionary(c => c.Headers.ContentDisposition!.Name!.Trim('"'));
+            Assert.Equal(original, await fields["file"].ReadAsByteArrayAsync());
+            Assert.Equal("pl", await fields["language"].ReadAsStringAsync());
+            Assert.False(fields.ContainsKey("prompt"));
+            Assert.Equal(calls++ == 0 ? "gpt-4o-mini-transcribe" : "gpt-4o-transcribe", await fields["model"].ReadAsStringAsync());
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = JsonContent.Create(new { text = calls == 1 ? suspect : "Czuję zmęczenie. Hmm, no nic." }) };
+        }));
+        var service = new OpenAiAudioTranscriptionService(http, Options.Create(new LlmOptions()));
+        Assert.Equal("Czuję zmęczenie. Hmm, no nic.", await service.TranscribeAsync(source, "capture.m4a", "audio/mp4", default));
+        Assert.Equal(2, calls);
+        Assert.True(source.CanRead);
+    }
+
+    [Fact]
+    public async Task NonSeekableAudioIsReplayedWithoutLosingBytes()
+    {
+        using var compressed = new MemoryStream();
+        using (var writer = new System.IO.Compression.GZipStream(compressed, System.IO.Compression.CompressionMode.Compress, leaveOpen: true))
+            writer.Write([1, 2, 3]);
+        compressed.Position = 0;
+        using var source = new System.IO.Compression.GZipStream(compressed, System.IO.Compression.CompressionMode.Decompress);
+        var calls = 0;
+        using var http = new HttpClient(new Handler(async request =>
+        {
+            var fields = Assert.IsType<MultipartFormDataContent>(request.Content).ToDictionary(c => c.Headers.ContentDisposition!.Name!.Trim('"'));
+            Assert.Equal(new byte[] { 1, 2, 3 }, await fields["file"].ReadAsByteArrayAsync());
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = JsonContent.Create(new { text = ++calls == 1 ? "음" : "Hmm, zastanawiam się." }) };
+        }));
+        var service = new OpenAiAudioTranscriptionService(http, Options.Create(new LlmOptions()));
+        Assert.Equal("Hmm, zastanawiam się.", await service.TranscribeAsync(source, "capture.m4a", "audio/mp4", default));
+        Assert.Equal(2, calls);
+    }
+
+    [Fact]
+    public async Task TwoSuspectResultsCreateNoNoteAndDoNotReachClassification()
+    {
+        var calls = 0;
+        using var http = new HttpClient(new Handler(_ =>
+        {
+            calls++;
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = JsonContent.Create(new { text = "Polska mowa. 음..." }) });
+        }));
+        using var app = new TestApp();
+        using var configured = app.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
+        {
+            services.RemoveAll<IAudioTranscriptionService>();
+            services.AddSingleton<IAudioTranscriptionService>(new OpenAiAudioTranscriptionService(http, Options.Create(new LlmOptions())));
+        }));
+        using var upload = Upload();
+        var response = await configured.CreateClient().PostAsync("/api/captures/audio", upload);
+        Assert.Equal(HttpStatusCode.BadGateway, response.StatusCode);
+        Assert.Equal(2, calls);
+        using var scope = configured.Services.CreateScope();
+        Assert.Empty(scope.ServiceProvider.GetRequiredService<LifeOs.Api.Data.LifeOsDbContext>().Captures);
+        Assert.Equal(0, app.Llm.ClassificationCalls);
+    }
+
+    [Theory]
+    [InlineData("ko", "음...")]
+    [InlineData("pl", "Mhm, yhm, hmm… .NET, Azure, coaching. Łódź.")]
+    public async Task CleanPolishOrExplicitKoreanDoesNotRetry(string language, string text)
+    {
+        var calls = 0;
+        using var http = new HttpClient(new Handler(_ =>
+        {
+            calls++;
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = JsonContent.Create(new { text }) });
+        }));
+        var service = new OpenAiAudioTranscriptionService(http, Options.Create(new LlmOptions { TranscriptionLanguage = language }));
+        Assert.Equal(text, await service.TranscribeAsync(new MemoryStream([1]), "capture.m4a", "audio/mp4", default));
+        Assert.Equal(1, calls);
+    }
+
+    [Fact]
+    public async Task UnavailableFallbackDoesNotAcceptSuspectFirstResult()
+    {
+        var calls = 0;
+        using var http = new HttpClient(new Handler(_ => Task.FromResult(++calls == 1
+            ? new HttpResponseMessage(HttpStatusCode.OK) { Content = JsonContent.Create(new { text = "음" }) }
+            : new HttpResponseMessage(HttpStatusCode.ServiceUnavailable))));
+        var service = new OpenAiAudioTranscriptionService(http, Options.Create(new LlmOptions()));
+        var error = await Assert.ThrowsAsync<TranscriptionException>(() => service.TranscribeAsync(new MemoryStream([1]), "capture.m4a", "audio/mp4", default));
+        Assert.False(error.NoSpeech);
+        Assert.Equal(2, calls);
+    }
+
     [Theory]
     [InlineData(null, 0, "audio/mp4", 400)]
     [InlineData("note.m4a", 0, "audio/mp4", 400)]
