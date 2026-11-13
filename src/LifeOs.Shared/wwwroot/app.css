@@ -566,3 +566,14 @@ footer {
 }
 
 }
+
+.environment-banner { margin: 0; padding: .6rem 1rem; text-align: center; background: #7039a8; color: white; font-weight: 600; }
+.admin-editor { border: 0; padding: 0; min-width: 0; }
+.admin-editor > label, .category-editor > label, .admin-preview > label { display: block; margin: 1rem 0 .4rem; font-weight: 600; }
+.admin-editor input:not([type=checkbox]), .admin-editor textarea, .admin-preview textarea { box-sizing: border-box; width: 100%; padding: .8rem; border: 1px solid #b8c4b7; border-radius: 8px; font: inherit; background: white; color: #243c32; }
+.admin-editor textarea, .admin-preview textarea { resize: vertical; }
+.category-editor { margin-bottom: 1rem; }
+.checkbox-label { display: flex !important; align-items: center; gap: .6rem; }
+.checkbox-label input { width: 1.2rem; height: 1.2rem; }
+.admin-actions { display: flex; flex-wrap: wrap; gap: .6rem; margin: 1rem 0; }
+.admin-preview { margin-top: 2rem; }

@@ -14,19 +14,20 @@ public static class CaptureExport
         Converters = { new JsonStringEnumConverter() }
     };
 
-    public static byte[] ToJson(IReadOnlyList<Capture> captures, DateTimeOffset exportedAt, string? type, bool deleted) =>
+    public static byte[] ToJson(IReadOnlyList<Capture> captures, DateTimeOffset exportedAt, string? type, bool deleted, Guid? categoryId = null) =>
         JsonSerializer.SerializeToUtf8Bytes(new
         {
-            schemaVersion = 1, exportedAt, scope = new { type, deleted }, count = captures.Count, captures
+            schemaVersion = 1, exportedAt, scope = new { type, deleted, categoryId }, count = captures.Count, captures
         }, Json);
 
-    public static byte[] ToMarkdown(IReadOnlyList<Capture> captures, DateTimeOffset exportedAt, string? type, bool deleted)
+    public static byte[] ToMarkdown(IReadOnlyList<Capture> captures, DateTimeOffset exportedAt, string? type, bool deleted, Guid? categoryId = null)
     {
         var output = new StringBuilder();
         output.AppendLine("# Life OS — eksport notatek").AppendLine();
         output.AppendLine($"Eksport: {PolishLabels.Date(exportedAt)} (Europe/Warsaw)");
         output.AppendLine($"Zakres: {(deleted ? "kosz" : "notatki poza koszem")}; typ: {(type is null ? "wszystkie" : PolishLabels.Type(Enum.Parse<CaptureType>(type)))}");
         output.AppendLine($"Liczba notatek: {captures.Count}").AppendLine();
+        if (categoryId.HasValue) output.AppendLine($"Filtr kategorii: {categoryId}").AppendLine();
         if (captures.Count == 0) output.AppendLine("Brak notatek w wybranym zakresie.");
         foreach (var capture in captures)
         {
@@ -35,7 +36,7 @@ public static class CaptureExport
             output.AppendLine($"- ID: {capture.Id}");
             output.AppendLine($"- Data notatki: {PolishLabels.Date(capture.CapturedAt)} (Europe/Warsaw)");
             output.AppendLine($"- Data zapisu: {PolishLabels.Date(capture.CreatedAt)} (Europe/Warsaw)");
-            output.AppendLine($"- Typ: {PolishLabels.Type(capture.Type)}");
+            output.AppendLine($"- Typ: {Escape(capture.CategoryName ?? PolishLabels.Type(capture.Type))}");
             output.AppendLine($"- Źródło: {PolishLabels.Source(capture.Source)}");
             output.AppendLine($"- Stan AI: {PolishLabels.State(capture.ProcessingState)}");
             output.AppendLine($"- Wymaga działania: {capture.ActionRequired switch { true => "tak", false => "nie", null => "nie ustalono" }}");

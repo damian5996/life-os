@@ -1,0 +1,8 @@
+<Project>
+  <!-- Separate generated Android manifests, resources and packages for Dev/Production. -->
+  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'LifeOs.Mobile' and '$(LifeOsEnvironment)' == 'Development'">
+    <BaseIntermediateOutputPath>obj/Dev/</BaseIntermediateOutputPath>
+    <BaseOutputPath>bin/Dev/</BaseOutputPath>
+    <DefaultItemExcludes>$(DefaultItemExcludes);bin/**;obj/**</DefaultItemExcludes>
+  </PropertyGroup>
+</Project>

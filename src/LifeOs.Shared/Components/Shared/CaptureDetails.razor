@@ -2,7 +2,7 @@
     <span class="eyebrow">SZCZEGÓŁY NOTATKI</span>
     <h1>@(Capture.Title ?? "Zapisana notatka")</h1>
     <dl class="facts">
-        <div><dt>Typ</dt><dd>@PolishLabels.Type(Capture.Type)</dd></div>
+        <div><dt>Kategoria</dt><dd>@(Capture.CategoryName ?? PolishLabels.Type(Capture.Type))</dd></div>
         <div><dt>Data · czas polski</dt><dd>@PolishLabels.Date(Capture.CapturedAt)</dd></div>
         <div><dt>Źródło</dt><dd>@PolishLabels.Source(Capture.Source)</dd></div>
         <div><dt>Przetwarzanie</dt><dd>@PolishLabels.State(Capture.ProcessingState)</dd></div>

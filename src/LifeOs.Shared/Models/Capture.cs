@@ -13,6 +13,9 @@ public sealed class Capture
     public required string RawText { get; set; }
     public CaptureSource Source { get; set; }
     public CaptureType? Type { get; set; }
+    public Guid? CategoryId { get; set; }
+    public string? CategoryName { get; set; }
+    public int? AiSettingsVersion { get; set; }
     public string? Title { get; set; }
     public string? Summary { get; set; }
     public string[] Tags { get; set; } = [];

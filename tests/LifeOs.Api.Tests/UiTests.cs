@@ -12,6 +12,43 @@ namespace LifeOs.Api.Tests;
 
 public sealed class UiTests
 {
+    [Fact]
+    public void AdministrationTestsDraftWithoutSavingAndActivatesExplicitly()
+    {
+        var calls = new List<string>();
+        var settings = new SettingsDocument(Guid.Empty, 0, Services.AiSettingsStore.Defaults(), Services.AiSettingsStore.Defaults());
+        using var context = Context(async request =>
+        {
+            var path = request.RequestUri!.AbsolutePath;
+            calls.Add(request.Method + " " + path);
+            if (path.EndsWith("/preview"))
+            {
+                var input = await request.Content!.ReadFromJsonAsync<PreviewSettingsRequest>(Llm.LlmJson.Options);
+                Assert.Equal("Nowy styl", input!.Settings.CaptureInstructions);
+                Assert.Equal("Przykład", input.Text);
+                return Json(new SettingsPreview(new Capture { RawText = input.Text, Title = "Wynik próby", CategoryName = "Próbna" }, null));
+            }
+            if (request.Method == HttpMethod.Put)
+            {
+                var input = await request.Content!.ReadFromJsonAsync<SaveSettingsRequest>(Llm.LlmJson.Options);
+                settings = settings with { Draft = input!.Draft, Revision = Guid.NewGuid() };
+            }
+            if (path.EndsWith("/activate")) settings = settings with { Active = settings.Draft, ActiveVersion = 1 };
+            return Json(settings);
+        });
+        context.Services.AddSingleton(new UiEnvironment("Dev", true));
+        var page = context.RenderComponent<Administration>();
+        page.WaitForAssertion(() => Assert.NotEmpty(page.FindAll("#capture-instructions")));
+        page.Find("#capture-instructions").Input("Nowy styl");
+        page.Find("#preview-text").Input("Przykład");
+        page.Find("#preview-note").Click();
+        page.WaitForAssertion(() => Assert.Contains("Wynik próby", page.Markup));
+        Assert.DoesNotContain(calls, x => x.StartsWith("PUT") || x.EndsWith("/activate"));
+        page.Find("#activate-settings").Click();
+        page.WaitForAssertion(() => Assert.Contains("Aktywowano wersję 1", page.Markup));
+        Assert.Equal(new[] { "PUT /api/administration/settings", "POST /api/administration/activate" }, calls.TakeLast(2));
+    }
+
     [Theory]
     [InlineData("markdown", "text/markdown", ".md")]
     [InlineData("json", "application/json", ".json")]

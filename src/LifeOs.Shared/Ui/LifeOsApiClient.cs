@@ -11,8 +11,22 @@ public sealed class LifeOsApiClient(IHttpClientFactory factory, NavigationManage
     private Uri ApiUri(string path) => options is null ? navigation.ToAbsoluteUri(path)
         : new Uri(new Uri(options.BaseAddress.AbsoluteUri.TrimEnd('/') + "/"), path);
 
-    public Task<Capture[]> GetCapturesAsync(CaptureType? type, bool deleted = false) => SendAsync<Capture[]>(HttpMethod.Get,
-        "api/captures?limit=100" + (type is null ? "" : $"&type={type}") + (deleted ? "&deleted=true" : ""), ClientJsonContext.Default.CaptureArray);
+    public Task<Capture[]> GetCapturesAsync(CaptureType? type, bool deleted = false, Guid? categoryId = null) => SendAsync<Capture[]>(HttpMethod.Get,
+        "api/captures?limit=100" + (type is null ? "" : $"&type={type}") + (deleted ? "&deleted=true" : "") +
+        (categoryId.HasValue ? $"&categoryId={categoryId}" : ""), ClientJsonContext.Default.CaptureArray);
+
+    public Task<NoteCategory[]> GetCategoriesAsync() => SendAsync<NoteCategory[]>(HttpMethod.Get, "api/categories", ClientJsonContext.Default.NoteCategoryArray);
+    public Task<SettingsDocument> GetSettingsAsync() => SendAsync<SettingsDocument>(HttpMethod.Get, "api/administration/settings", ClientJsonContext.Default.SettingsDocument);
+    public Task<AiSettings> GetDefaultSettingsAsync() => SendAsync<AiSettings>(HttpMethod.Get, "api/administration/defaults", ClientJsonContext.Default.AiSettings);
+    public Task<SettingsDocument> SaveSettingsAsync(Guid revision, AiSettings draft) => SendAsync<SettingsDocument>(HttpMethod.Put,
+        "api/administration/settings", ClientJsonContext.Default.SettingsDocument,
+        JsonContent.Create(new SaveSettingsRequest(revision, draft), ClientJsonContext.Default.SaveSettingsRequest));
+    public Task<SettingsDocument> ActivateSettingsAsync(Guid revision) => SendAsync<SettingsDocument>(HttpMethod.Post,
+        "api/administration/activate", ClientJsonContext.Default.SettingsDocument,
+        JsonContent.Create(new ActivateSettingsRequest(revision), ClientJsonContext.Default.ActivateSettingsRequest));
+    public Task<SettingsPreview> PreviewSettingsAsync(AiSettings draft, string text, bool review) => SendAsync<SettingsPreview>(HttpMethod.Post,
+        "api/administration/preview", ClientJsonContext.Default.SettingsPreview,
+        JsonContent.Create(new PreviewSettingsRequest(draft, text, review), ClientJsonContext.Default.PreviewSettingsRequest));
 
     public Task<Capture> CreateCaptureAsync(string text) => SendAsync<Capture>(HttpMethod.Post,
         "api/captures", ClientJsonContext.Default.Capture,
@@ -24,13 +38,13 @@ public sealed class LifeOsApiClient(IHttpClientFactory factory, NavigationManage
     public Task<WeeklyReview> GenerateReviewAsync(string period = "week", DateOnly? from = null, DateOnly? to = null) => SendAsync<WeeklyReview>(HttpMethod.Post,
         "api/review?period=" + Uri.EscapeDataString(period) + (period == "custom" ? $"&from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}" : ""), ClientJsonContext.Default.WeeklyReview);
 
-    public async Task<ExportFile> DownloadExportAsync(string format, CaptureType? type, bool deleted)
+    public async Task<ExportFile> DownloadExportAsync(string format, CaptureType? type, bool deleted, Guid? categoryId = null)
     {
         if (format is not ("markdown" or "json")) throw new UiApiException("Nieobsługiwany format eksportu.");
         try
         {
             using var client = factory.CreateClient("LifeOsUi");
-            using var response = await client.GetAsync(ApiUri(ExportPath(format, type, deleted)));
+            using var response = await client.GetAsync(ApiUri(ExportPath(format, type, deleted, categoryId)));
             await EnsureSuccess(response);
             var mediaType = format == "json" ? "application/json" : "text/markdown";
             if (response.Content.Headers.ContentType?.MediaType != mediaType)
@@ -44,9 +58,9 @@ public sealed class LifeOsApiClient(IHttpClientFactory factory, NavigationManage
         { throw new UiApiException("Nie udało się pobrać eksportu. Sprawdź połączenie i spróbuj ponownie."); }
     }
 
-    public static string ExportPath(string format, CaptureType? type, bool deleted) =>
+    public static string ExportPath(string format, CaptureType? type, bool deleted, Guid? categoryId = null) =>
         $"api/captures/export?format={Uri.EscapeDataString(format)}" + (type is null ? "" : $"&type={type}")
-        + (deleted ? "&deleted=true" : "");
+        + (deleted ? "&deleted=true" : "") + (categoryId.HasValue ? $"&categoryId={categoryId}" : "");
 
     private async Task<T> SendAsync<T>(HttpMethod method, string path, JsonTypeInfo<T>? typeInfo = null,
         HttpContent? body = null, bool noContent = false)

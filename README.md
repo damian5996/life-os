@@ -1,5 +1,8 @@
 # Life OS v0.1
 
+Środowisko testowe na komputerze i osobna aplikacja **LifeOS Dev**:
+[instrukcja uruchamiania i administracji](docs/LOCAL_DEV.md).
+
 Mały eksperyment: **mam myśl → szybko ją zapisuję → Life OS pamięta i porządkuje**.
 ASP.NET Core Minimal API / .NET 10, EF Core, PostgreSQL i API LLM zgodne z OpenAI Chat Completions.
 Wspólny interfejs Blazor po polsku dla Web i .NET MAUI Blazor Hybrid na Androidzie,

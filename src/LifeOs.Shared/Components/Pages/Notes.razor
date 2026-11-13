@@ -45,10 +45,19 @@ else
     <button class="trash-toggle" aria-pressed="@showTrash" @onclick="ToggleTrash">@(showTrash ? "Wróć do aktywnych notatek" : "Pokaż kosz")</button>
     <button class="refresh-button" disabled="@loading" @onclick="Load">Odśwież</button>
     <div class="filters" role="group" aria-label="Filtruj według typu">
-        @foreach (var filter in PolishLabels.Filters)
+        @if (customCategories)
+        {
+            <button class="@(activeCategory is null ? "chosen" : "")" @onclick="() => FilterCategory(null)">Wszystkie</button>
+            @foreach (var category in categories)
+            {
+                <button class="@(activeCategory == category.Id ? "chosen" : "")" @onclick="() => FilterCategory(category.Id)">@category.Name@(!category.Enabled ? " (archiwalna)" : "")</button>
+            }
+        }
+        else { @foreach (var filter in PolishLabels.Filters)
         {
             <button class="@(activeType == filter.Type ? "chosen" : "")" aria-pressed="@(activeType == filter.Type)"
                     @onclick="() => Filter(filter.Type)">@filter.Label</button>
+        }
         }
     </div>
     <div class="export-actions" aria-label="Eksport notatek">
@@ -82,11 +91,14 @@ else
     private Capture[] captures = [];
     private Capture? selected;
     private CaptureType? activeType;
+    private Guid? activeCategory;
+    private NoteCategory[] categories = [];
+    private bool customCategories => Services.GetService<UiEnvironment>()?.AdministrationEnabled == true;
     private bool loading = true, adding, saving, changing, showTrash;
     private string text = "";
     private string? error, message;
     private int loadVersion;
-    private string ExportUrl(string format) => LifeOsApiClient.ExportPath(format, activeType, showTrash);
+    private string ExportUrl(string format) => LifeOsApiClient.ExportPath(format, activeType, showTrash, activeCategory);
     private IExportDestination? exportDestination;
     private CaptureChanges? changes;
     private bool exporting, disposed;
@@ -109,7 +121,7 @@ else
     {
         if (exporting || exportDestination is null) return;
         exporting = true; exportError = null;
-        try { await exportDestination.ShareAsync(await Api.DownloadExportAsync(format, activeType, showTrash)); }
+        try { await exportDestination.ShareAsync(await Api.DownloadExportAsync(format, activeType, showTrash, activeCategory)); }
         catch (UiApiException e) { exportError = e.Message; }
         catch (Exception) { exportError = "Nie udało się udostępnić pliku. Spróbuj ponownie."; }
         finally { exporting = false; }
@@ -118,11 +130,17 @@ else
     {
         var version = ++loadVersion;
         loading = true; error = null;
-        try { var result = await Api.GetCapturesAsync(activeType, showTrash); if (version == loadVersion) captures = result; }
+        try
+        {
+            if (customCategories) categories = await Api.GetCategoriesAsync();
+            var result = await Api.GetCapturesAsync(activeType, showTrash, activeCategory);
+            if (version == loadVersion) captures = result;
+        }
         catch (UiApiException e) { if (version == loadVersion) error = e.Message; }
         finally { if (version == loadVersion) loading = false; }
     }
     private async Task Filter(CaptureType? type) { activeType = type; await Load(); }
+    private async Task FilterCategory(Guid? id) { activeCategory = id; activeType = null; await Load(); }
     private void Open(Capture capture) { selected = capture; message = null; error = null; }
     private async Task ToggleTrash() { showTrash = !showTrash; activeType = null; message = null; await Load(); }
     private async Task ChangeDeletedState(bool delete)

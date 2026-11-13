@@ -36,7 +36,7 @@ public static class LifeOsEndpoints
         return await captures.CreateFromTextAsync(request.Text, request.Source.Value, request.CapturedAt, cancellationToken);
     }
     private static async Task<IResult> GetCaptures(LifeOsDbContext db, TimeProvider clock, CancellationToken cancellationToken,
-        int? days = null, string? type = null, string? source = null, int limit = 100, bool deleted = false)
+        int? days = null, string? type = null, string? source = null, int limit = 100, bool deleted = false, Guid? categoryId = null)
     {
         if (days is <= 0 or > 36500 || limit is < 1 or > 500) return InvalidQuery("days: 1–36500; limit: 1–500.");
         var query = db.Captures.AsNoTracking().Where(c => deleted
@@ -52,6 +52,7 @@ public static class LifeOsEndpoints
             var value = Enum.Parse<CaptureType>(type);
             query = query.Where(c => c.Type == value);
         }
+        if (categoryId.HasValue) query = query.Where(c => c.CategoryId == categoryId);
         if (source is not null)
         {
             if (!Enum.GetNames<CaptureSource>().Contains(source)) return InvalidQuery("Nieprawidłowy source.");
@@ -64,7 +65,7 @@ public static class LifeOsEndpoints
     private static IResult InvalidQuery(string message) => Results.ValidationProblem(
         new Dictionary<string, string[]> { ["query"] = [message] });
     private static async Task<IResult> ExportCaptures(LifeOsDbContext db, TimeProvider clock, HttpContext context,
-        CancellationToken cancellationToken, string format = "markdown", string? type = null, bool deleted = false)
+        CancellationToken cancellationToken, string format = "markdown", string? type = null, bool deleted = false, Guid? categoryId = null)
     {
         context.Response.Headers.CacheControl = "no-store";
         context.Response.Headers["X-Content-Type-Options"] = "nosniff";
@@ -76,11 +77,12 @@ public static class LifeOsEndpoints
             var value = Enum.Parse<CaptureType>(type);
             query = query.Where(c => c.Type == value);
         }
+        if (categoryId.HasValue) query = query.Where(c => c.CategoryId == categoryId);
         var captures = await query.OrderByDescending(c => c.CapturedAt).ThenByDescending(c => c.CreatedAt)
             .ThenBy(c => c.Id).ToListAsync(cancellationToken);
         var now = clock.GetUtcNow();
-        var bytes = format == "json" ? Services.CaptureExport.ToJson(captures, now, type, deleted)
-            : Services.CaptureExport.ToMarkdown(captures, now, type, deleted);
+        var bytes = format == "json" ? Services.CaptureExport.ToJson(captures, now, type, deleted, categoryId)
+            : Services.CaptureExport.ToMarkdown(captures, now, type, deleted, categoryId);
         var extension = format == "json" ? "json" : "md";
         var filename = $"lifeos-{(deleted ? "kosz" : "notatki")}-{type ?? "wszystkie"}-{now:yyyyMMdd-HHmmss}Z.{extension}";
         return Results.File(bytes, format == "json" ? "application/json; charset=utf-8" : "text/markdown; charset=utf-8", filename);

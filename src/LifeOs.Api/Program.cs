@@ -9,6 +9,21 @@ using LifeOs.Api.Components;
 using LifeOs.Api.Ui;
 
 var builder = WebApplication.CreateBuilder(args);
+var localDev = builder.Configuration.GetValue<bool>("LifeOs:LocalDev");
+if (localDev)
+{
+    // Dev never inherits an API key from the production project's User Secrets.
+    builder.Configuration["Llm:ApiKey"] = "";
+    builder.Configuration["Llm:RequireApiKey"] = "true";
+    builder.Configuration.AddUserSecrets("lifeos-local-dev");
+    if (Environment.GetEnvironmentVariable("LIFEOS_DEV_API_KEY") is { Length: > 0 } devKey)
+        builder.Configuration["Llm:ApiKey"] = devKey;
+    LifeOs.Api.Services.LocalDevGuard.Validate(builder.Environment.EnvironmentName,
+        builder.Configuration.GetConnectionString("DefaultConnection") ?? "");
+    builder.WebHost.UseUrls("http://127.0.0.1:5081");
+    builder.Services.AddScoped<LifeOs.Api.Services.AiSettingsStore>();
+    builder.Services.AddSingleton(new UiEnvironment("Dev", true));
+}
 // Also resolve framework assets when running locally without a Development launch profile.
 builder.WebHost.UseStaticWebAssets();
 builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.Converters.Add(new JsonStringEnumConverter(allowIntegerValues: false)));
@@ -25,8 +40,9 @@ builder.Services.AddOptions<LlmOptions>().BindConfiguration("Llm")
     .Validate(o => o.TimeoutSeconds is >= 1 and <= 300, "Llm:TimeoutSeconds must be 1–300")
     .Validate(o => o.TranscriptionTimeoutSeconds is >= 1 and <= 300, "Llm:TranscriptionTimeoutSeconds must be 1–300")
     .ValidateOnStart();
-builder.Services.AddHttpClient<ILifeOsLlmService, OpenAiCompatibleLlmService>((sp, http) =>
+builder.Services.AddHttpClient<OpenAiCompatibleLlmService>((sp, http) =>
     http.Timeout = TimeSpan.FromSeconds(sp.GetRequiredService<IOptions<LlmOptions>>().Value.TimeoutSeconds));
+builder.Services.AddScoped<ILifeOsLlmService>(sp => sp.GetRequiredService<OpenAiCompatibleLlmService>());
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddHttpClient<LifeOs.Api.Audio.IAudioTranscriptionService, LifeOs.Api.Audio.OpenAiAudioTranscriptionService>((sp, http) =>
     http.Timeout = TimeSpan.FromSeconds(sp.GetRequiredService<IOptions<LlmOptions>>().Value.TranscriptionTimeoutSeconds));
@@ -36,6 +52,15 @@ builder.Services.AddHttpClient("LifeOsUi", client => client.Timeout = TimeSpan.F
 builder.Services.AddScoped<LifeOsApiClient>();
 builder.Services.AddScoped<CaptureChanges>();
 var app = builder.Build();
+if (localDev)
+{
+    using var scope = app.Services.CreateScope();
+    await scope.ServiceProvider.GetRequiredService<LifeOsDbContext>().Database.MigrateAsync();
+    // This first version deliberately exposes administration only on local Dev.
+    app.MapAdministration();
+}
+app.MapGet("/api/environment", () => new { name = localDev ? "Dev" : "Production", administrationEnabled = localDev,
+    aiConfigured = !string.IsNullOrWhiteSpace(builder.Configuration["Llm:ApiKey"]) });
 app.Use(async (context, next) =>
 {
     try { await next(context); }
