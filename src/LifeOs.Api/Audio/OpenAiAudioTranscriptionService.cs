@@ -1,4 +1,5 @@
 using System.Net.Http.Headers;
+using System.Text;
 using System.Text.Json;
 using LifeOs.Api.Llm;
 using Microsoft.Extensions.Options;
@@ -26,12 +27,12 @@ public sealed class OpenAiAudioTranscriptionService(HttpClient http, IOptions<Ll
             var source = (Stream?)buffer ?? audioStream;
             var start = source.Position;
             var text = await TranscribeOnceAsync(source, fileName, contentType, config.TranscriptionModel, deadline.Token);
-            if (!UnexpectedHangul(text, config.TranscriptionLanguage)) return text;
-            logger?.LogWarning("Unexpected Hangul in Polish transcription; retrying original audio once");
+            if (!ContainsNonLatinLetters(text)) return text;
+            logger?.LogWarning("Unexpected alphabet in Polish transcription; retrying original audio once");
             if (string.IsNullOrWhiteSpace(config.TranscriptionFallbackModel)) throw UnreliableSpeech();
             source.Position = start;
             text = await TranscribeOnceAsync(source, fileName, contentType, config.TranscriptionFallbackModel, deadline.Token);
-            if (UnexpectedHangul(text, config.TranscriptionLanguage))
+            if (ContainsNonLatinLetters(text))
             {
                 logger?.LogWarning("Polish transcription quality check failed after retry; no capture created");
                 throw UnreliableSpeech();
@@ -42,11 +43,22 @@ public sealed class OpenAiAudioTranscriptionService(HttpClient http, IOptions<Ll
         { throw new TranscriptionException("Przekroczono czas transkrypcji. Nagranie pozostało na telefonie."); }
     }
 
-    private static bool UnexpectedHangul(string text, string language) =>
-        string.Equals(language, "pl", StringComparison.OrdinalIgnoreCase) && text.Any(c =>
-            c is >= '\u1100' and <= '\u11FF' or >= '\u3130' and <= '\u318F' or
-                >= '\uA960' and <= '\uA97F' or >= '\uAC00' and <= '\uD7AF' or >= '\uD7B0' and <= '\uD7FF' or
-                >= '\uFFA0' and <= '\uFFDC');
+    private static bool ContainsNonLatinLetters(string text)
+    {
+        // Polish and English technical terms use Latin letters. Check Unicode scalars
+        // rather than UTF-16 chars so supplementary scripts cannot bypass the check.
+        // Punctuation, numbers, emoji and combining accents are not letters.
+        foreach (var rune in text.EnumerateRunes())
+        {
+            if (!Rune.IsLetter(rune)) continue;
+            if (rune.Value is >= 0x0041 and <= 0x007A or >= 0x00C0 and <= 0x024F or
+                >= 0x1E00 and <= 0x1EFF or
+                >= 0x2C60 and <= 0x2C7F or >= 0xA720 and <= 0xA7FF or
+                >= 0xAB30 and <= 0xAB6F or >= 0xFF21 and <= 0xFF5A) continue;
+            return true;
+        }
+        return false;
+    }
 
     private static TranscriptionException UnreliableSpeech() => new(
         "Nie udało się wiarygodnie rozpoznać polskiej mowy. Notatka nie została utworzona. Nagranie pozostało na telefonie; ponów wysyłanie.");
@@ -64,7 +76,9 @@ public sealed class OpenAiAudioTranscriptionService(HttpClient http, IOptions<Ll
         audio.Headers.ContentType = new MediaTypeHeaderValue(contentType ?? "application/octet-stream");
         form.Add(audio, "file", fileName);
         form.Add(new StringContent(model), "model");
-        form.Add(new StringContent(config.TranscriptionLanguage), "language");
+        // LifeOS records Polish speech. Do not permit environment overrides to
+        // switch this to auto-detection or another language.
+        form.Add(new StringContent("pl"), "language");
         form.Add(new StringContent("json"), "response_format");
         form.Add(new StringContent("auto"), "chunking_strategy");
         // On silent recordings the provider can echo the prompt as a transcription.

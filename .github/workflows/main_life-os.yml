@@ -77,10 +77,13 @@ jobs:
           package: ./publish
           startup-command: 'dotnet /home/site/wwwroot/LifeOs.Api.dll'
 
-      - name: Restart the application after replacing assemblies
+      - name: Configure Polish transcription and restart after replacing assemblies
         run: |
           resource_group=$(az webapp list --query "[?name=='life-os'].resourceGroup | [0]" -o tsv)
           test -n "$resource_group"
+          # Only these non-secret values may be logged. Never print all settings.
+          az webapp config appsettings list -g "$resource_group" -n life-os --query "[?name=='Llm__TranscriptionModel' || name=='Llm__TranscriptionLanguage' || name=='Llm__TranscriptionFallbackModel'].{name:name,value:value}"
+          az webapp config appsettings set -g "$resource_group" -n life-os --settings Llm__TranscriptionModel=gpt-4o-transcribe Llm__TranscriptionFallbackModel=gpt-4o-transcribe --output none
           az webapp restart --name life-os --resource-group "$resource_group"
 
       - name: Verify the public application is ready
