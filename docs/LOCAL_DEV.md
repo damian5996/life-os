@@ -91,7 +91,7 @@ generować koszty API; lokalny backend nie wymaga hostingu Azure.
    kolejne zdanie i terminy „.NET, Azure”. Naciśnij Stop. Przy działającym połączeniu
    świeże nagranie wysyła się automatycznie; zaległe wyślesz przyciskiem Synchronizuj.
 7. Otwórz szczegóły w Notatkach i sprawdź **Oryginalną notatkę**, czyli transkrypcję,
-   nie tylko podsumowanie AI. Porównaj słowa, przerwy i brak koreańskich wstawek.
+   nie tylko podsumowanie AI. Porównaj słowa, przerwy i brak wstawek obcym alfabetem.
    Osobno sprawdź krótką wypowiedź, cichą mowę oraz sekundę samej ciszy.
 
 Testuj na gałęzi `codex/dev-admin`. Poprawka transkrypcji jest wspólna z produkcją;
@@ -142,3 +142,9 @@ polskiej transkrypcji z produkcyjnego commitu `46bcc0d`; opis w
 2 dodatkowe testy PostgreSQL oraz 14 testów mobilnych. Jednorazową bazę testową usunięto;
 baza Dev zachowuje ustawienia. Klucz AI nadal pozostaje nieskonfigurowany zgodnie
 z wcześniejszą decyzją użytkownika — testy z prawdziwym głosem wymagają jego dodania.
+
+### Aktualizacja 2026-11-14
+
+Dołączono produkcyjną poprawkę `1024053`: stały język polski, pełny model
+transkrypcji oraz kontrola obcych alfabetów obejmująca cyrylicę. Po połączeniu
+zmian przeszło 148 testów backendu/UI; dwa opcjonalne testy PostgreSQL pominięto.
