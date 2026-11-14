@@ -34,9 +34,11 @@ A text-only OpenAI-compatible provider is not necessarily a transcription provid
 
 | Key | Default | Azure App Service setting |
 | --- | --- | --- |
-| `Llm:TranscriptionModel` | `gpt-4o-mini-transcribe` | `Llm__TranscriptionModel` |
-| `Llm:TranscriptionLanguage` | `pl` | `Llm__TranscriptionLanguage` |
+| `Llm:TranscriptionModel` | `gpt-4o-transcribe` | `Llm__TranscriptionModel` |
 | `Llm:TranscriptionTimeoutSeconds` | `180` | `Llm__TranscriptionTimeoutSeconds` |
+
+Język transkrypcji jest na stałe ustawiony na polski (`language=pl`). Dawne
+ustawienie `Llm:TranscriptionLanguage` nie zmienia już języka.
 
 The adapter uses JSON responses, Polish language and `chunking_strategy=auto` for
 provider-side voice activity detection. It sends no prompt: the previous instruction

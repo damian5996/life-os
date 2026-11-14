@@ -6,6 +6,7 @@ using LifeOs.Api.Endpoints;
 using LifeOs.Api.Llm;
 using LifeOs.Api.Models;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Configuration;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -18,7 +19,13 @@ public sealed class AudioTests
     [InlineData("Czuję zmęczenie. 음. No nic.")]
     [InlineData("어 피사 찍다래요.")]
     [InlineData("Hmm ᄋ ㅓ ﾡ")]
-    public async Task HangulRetriesOriginalAudioWithFallbackAndNoPrompt(string suspect)
+    [InlineData("Зноў ўпраўдзіваем. Pogoda... Показывая Даша. Я jestem злы на то. Живём в листопаде.")]
+    [InlineData("Pogoda. Я.")]
+    [InlineData("Hmm. Ελληνικά.")]
+    [InlineData("Hmm. العربية.")]
+    [InlineData("Hmm. 中文.")]
+    [InlineData("Hmm. \U00020000.")]
+    public async Task ForeignAlphabetRetriesOriginalAudioWithFallbackAndNoPrompt(string suspect)
     {
         var calls = 0;
         var original = new byte[] { 1, 2, 3, 4 };
@@ -33,7 +40,7 @@ public sealed class AudioTests
             Assert.Equal(calls++ == 0 ? "gpt-4o-mini-transcribe" : "gpt-4o-transcribe", await fields["model"].ReadAsStringAsync());
             return new HttpResponseMessage(HttpStatusCode.OK) { Content = JsonContent.Create(new { text = calls == 1 ? suspect : "Czuję zmęczenie. Hmm, no nic." }) };
         }));
-        var service = new OpenAiAudioTranscriptionService(http, Options.Create(new LlmOptions()));
+        var service = new OpenAiAudioTranscriptionService(http, Options.Create(new LlmOptions { TranscriptionModel = "gpt-4o-mini-transcribe" }));
         Assert.Equal("Czuję zmęczenie. Hmm, no nic.", await service.TranscribeAsync(source, "capture.m4a", "audio/mp4", default));
         Assert.Equal(2, calls);
         Assert.True(source.CanRead);
@@ -59,14 +66,17 @@ public sealed class AudioTests
         Assert.Equal(2, calls);
     }
 
-    [Fact]
-    public async Task TwoSuspectResultsCreateNoNoteAndDoNotReachClassification()
+    [Theory]
+    [InlineData("Polska mowa. 음...")]
+    [InlineData("Я jestem злы na to.")]
+    [InlineData("Живём в листопаде.")]
+    public async Task TwoSuspectResultsCreateNoNoteAndDoNotReachClassification(string suspect)
     {
         var calls = 0;
         using var http = new HttpClient(new Handler(_ =>
         {
             calls++;
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = JsonContent.Create(new { text = "Polska mowa. 음..." }) });
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = JsonContent.Create(new { text = suspect }) });
         }));
         using var app = new TestApp();
         using var configured = app.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
@@ -84,9 +94,10 @@ public sealed class AudioTests
     }
 
     [Theory]
-    [InlineData("ko", "음...")]
-    [InlineData("pl", "Mhm, yhm, hmm… .NET, Azure, coaching. Łódź.")]
-    public async Task CleanPolishOrExplicitKoreanDoesNotRetry(string language, string text)
+    [InlineData("Mhm, yhm, hmm… .NET, Azure, coaching. Łódź.")]
+    [InlineData("Zażółć gęślą jaźń. 13.11, 20:09 — 5°C, 50%, 😊.")]
+    [InlineData("Cafe\u0301, São Paulo, München. API, backend, coaching.")]
+    public async Task CleanPolishAndLatinTermsDoNotRetry(string text)
     {
         var calls = 0;
         using var http = new HttpClient(new Handler(_ =>
@@ -94,9 +105,32 @@ public sealed class AudioTests
             calls++;
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = JsonContent.Create(new { text }) });
         }));
-        var service = new OpenAiAudioTranscriptionService(http, Options.Create(new LlmOptions { TranscriptionLanguage = language }));
+        var service = new OpenAiAudioTranscriptionService(http, Options.Create(new LlmOptions()));
         Assert.Equal(text, await service.TranscribeAsync(new MemoryStream([1]), "capture.m4a", "audio/mp4", default));
         Assert.Equal(1, calls);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("auto")]
+    [InlineData("ru")]
+    [InlineData("ko")]
+    public async Task LegacyConfigurationCannotOverridePolishLanguage(string language)
+    {
+        var configuration = new Microsoft.Extensions.Configuration.ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["TranscriptionLanguage"] = language }).Build();
+        var options = new LlmOptions();
+        Microsoft.Extensions.Configuration.ConfigurationBinder.Bind(configuration, options);
+        using var http = new HttpClient(new Handler(async request =>
+        {
+            var fields = Assert.IsType<MultipartFormDataContent>(request.Content)
+                .ToDictionary(c => c.Headers.ContentDisposition!.Name!.Trim('"'));
+            Assert.Equal("pl", await fields["language"].ReadAsStringAsync());
+            Assert.Equal("gpt-4o-transcribe", await fields["model"].ReadAsStringAsync());
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = JsonContent.Create(new { text = "Pogoda." }) };
+        }));
+        var service = new OpenAiAudioTranscriptionService(http, Options.Create(options));
+        Assert.Equal("Pogoda.", await service.TranscribeAsync(new MemoryStream([1]), "capture.m4a", "audio/mp4", default));
     }
 
     [Fact]
