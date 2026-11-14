@@ -148,3 +148,9 @@ z wcześniejszą decyzją użytkownika — testy z prawdziwym głosem wymagają 
 Dołączono produkcyjną poprawkę `1024053`: stały język polski, pełny model
 transkrypcji oraz kontrola obcych alfabetów obejmująca cyrylicę. Po połączeniu
 zmian przeszło 148 testów backendu/UI; dwa opcjonalne testy PostgreSQL pominięto.
+Wdrożenie produkcyjne `43562895268` zakończyło się sukcesem. Sześć prób na Azure
+przeszło: cisza 1 s / 5 s i sam syntetyczny pomruk zwracają 422 bez notatki;
+krótka mowa, cicha mowa i mowa z pomrukiem zwracają 201 z oczekiwanymi polskimi
+słowami, bez obcych alfabetów. Notatki testowe przeniesiono do kosza. Po wdrożeniu
+wystąpiło przejściowe oczekiwanie na odpowiedź API przed ukończeniem prób.
+Dev działa lokalnie, tunel USB został przywrócony; klucz AI nadal nie jest ustawiony.
