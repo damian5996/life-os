@@ -154,3 +154,25 @@ krótka mowa, cicha mowa i mowa z pomrukiem zwracają 201 z oczekiwanymi polskim
 słowami, bez obcych alfabetów. Notatki testowe przeniesiono do kosza. Po wdrożeniu
 wystąpiło przejściowe oczekiwanie na odpowiedź API przed ukończeniem prób.
 Dev działa lokalnie, tunel USB został przywrócony; klucz AI nadal nie jest ustawiony.
+
+### Zaległe nagrania — 2026-11-14
+
+Logi produkcji potwierdziły powtórny błąd kontroli alfabetu w rzeczywistym nagraniu.
+Hotfix `956f27a` zmienia model ponownej próby na Whisper, zachowując `language=pl`
+i kontrolę wyniku. Wdrożenie `43564375503` zakończyło się sukcesem, a dostęp do
+modelu sprawdzono przed publikacją. Przeszło 138 testów produkcyjnego backendu,
+148 testów po połączeniu z Dev (po dwa opcjonalne PostgreSQL pominięte) oraz
+18 testów mobilnych. Release 0.3.1 zbudowany bez ostrzeżeń i błędów.
+
+Na podłączonym telefonie ponowiono synchronizację dwóch zaległych nagrań
+(13 listopada 08:22 i 14 listopada 06:56). Oba zniknęły z kolejki i pojawiło się
+„Wszystkie nagrania zsynchronizowane”. Nie sprawdzano prywatnej treści notatek;
+zgodność słów z nagraniami pozostaje do oceny przez użytkownika.
+
+APK 0.3.1 NIE został zainstalowany: Android odrzucił aktualizację z powodu innego
+podpisu. Produkcyjny telefon nadal ma 0.3.0; nie odinstalowywano aplikacji ani nie
+czyszczono danych. Certyfikat zainstalowanej aplikacji (SHA-256):
+`2d38b016ab731e2b80a3701c8bf0f40c7accc83259282a7a6357f19266a7e66f`.
+Obecny lokalny debug.keystore ma inny certyfikat; do bezstratnej aktualizacji trzeba
+odzyskać pierwotny klucz. Nie proponować odinstalowania z niezsynchronizowanym audio.
+Nowe komunikaty błędów są przetestowane i zapisane w kodzie, ale nie na telefonie.
