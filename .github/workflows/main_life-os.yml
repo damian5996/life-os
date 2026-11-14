@@ -68,6 +68,29 @@ jobs:
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_E40591982E1F4E9CAFEEBD29905E6F5B }}
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_9B8CFC9B1CA9493789A59E7541061BA9 }}
 
+      - name: Verify fallback model access before deployment
+        run: |
+          python3 - <<'PY'
+          import json, subprocess, urllib.request, urllib.error
+          group = subprocess.check_output(['az', 'webapp', 'list', '--query', "[?name=='life-os'].resourceGroup | [0]", '-o', 'tsv'], text=True).strip()
+          settings = json.loads(subprocess.check_output(['az', 'webapp', 'config', 'appsettings', 'list', '-g', group, '-n', 'life-os', '-o', 'json'], text=True))
+          config = {item['name'].replace('__', ':'): item['value'] for item in settings}
+          key = config.get('Llm:ApiKey')
+          if not key:
+              raise SystemExit('Transcription credential unavailable; deployment stopped.')
+          request = urllib.request.Request('https://api.openai.com/v1/models/whisper-1', headers={'Authorization': 'Bearer ' + key})
+          try:
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  available = json.load(response).get('id') == 'whisper-1'
+          except urllib.error.HTTPError as error:
+              raise SystemExit(f'Fallback access check failed: HTTP {error.code}; deployment stopped.') from None
+          except Exception:
+              raise SystemExit('Fallback access check unavailable; deployment stopped.') from None
+          if not available:
+              raise SystemExit('Unexpected model response; deployment stopped.')
+          print('Fallback model access verified. No credential or response content logged.')
+          PY
+
       - name: Deploy to Azure Web App
         id: deploy-to-webapp
         uses: azure/webapps-deploy@v3
@@ -83,7 +106,7 @@ jobs:
           test -n "$resource_group"
           # Only these non-secret values may be logged. Never print all settings.
           az webapp config appsettings list -g "$resource_group" -n life-os --query "[?name=='Llm__TranscriptionModel' || name=='Llm__TranscriptionLanguage' || name=='Llm__TranscriptionFallbackModel'].{name:name,value:value}"
-          az webapp config appsettings set -g "$resource_group" -n life-os --settings Llm__TranscriptionModel=gpt-4o-transcribe Llm__TranscriptionFallbackModel=gpt-4o-transcribe --output none
+          az webapp config appsettings set -g "$resource_group" -n life-os --settings Llm__TranscriptionModel=gpt-4o-transcribe Llm__TranscriptionFallbackModel=whisper-1 --output none
           az webapp restart --name life-os --resource-group "$resource_group"
 
       - name: Verify the public application is ready

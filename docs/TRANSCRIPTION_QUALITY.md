@@ -10,7 +10,12 @@ Nie jest to tłumaczenie tekstu ani automatyczny wybór języka.
    nadpisywała. Pełny model może zwiększyć koszt i czas transkrypcji.
 2. Litery spoza obsługiwanych bloków alfabetu łacińskiego (m.in. cyrylica, Hangul,
    grecki, arabski, chiński) powodują jedną ponowną próbę z oryginalnymi bajtami audio.
-   Używany jest `Llm:TranscriptionFallbackModel`, domyślnie również `gpt-4o-transcribe`.
+   Używany jest `Llm:TranscriptionFallbackModel`, obecnie `whisper-1`. Powtarzanie
+   pełnego modelu również dawało obcy alfabet w rzeczywistym nagraniu użytkownika;
+   druga próba korzysta więc z innego modelu, nadal z `language=pl`, bez promptu.
+   Whisper nie otrzymuje parametru `chunking_strategy`. Przed wdrożeniem sprawdzany
+   jest dostęp konta do modelu. Modele te wymagają migracji przed 2027-02-26,
+   zgodnie z harmonogramem wycofania OpenAI; nowy model należy ocenić na audio.
 3. Nie dodajemy promptu, który wcześniej był powtarzany przy ciszy. Nie usuwamy
    obcych liter i nie tłumaczymy podejrzanego wyniku. Polski, angielskie terminy,
    cyfry, interpunkcja i emoji pozostają bez zmian.

@@ -107,7 +107,7 @@ public sealed class CaptureSession
     }
     private void Failure(QueuedRecording item, Exception error)
     {
-        Status = error is InvalidOperationException ? error.Message :
+        Status = error is InvalidOperationException or HttpRequestException { StatusCode: not null } ? error.Message :
             "Nie udało się wysłać nagrania. Plik pozostał na telefonie. Ponów synchronizację po sprawdzeniu połączenia.";
         queue.Ready(item, Status); Changed?.Invoke();
     }

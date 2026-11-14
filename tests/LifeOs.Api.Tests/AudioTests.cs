@@ -37,10 +37,11 @@ public sealed class AudioTests
             Assert.Equal(original, await fields["file"].ReadAsByteArrayAsync());
             Assert.Equal("pl", await fields["language"].ReadAsStringAsync());
             Assert.False(fields.ContainsKey("prompt"));
-            Assert.Equal(calls++ == 0 ? "gpt-4o-mini-transcribe" : "gpt-4o-transcribe", await fields["model"].ReadAsStringAsync());
+            Assert.Equal(calls == 0, fields.ContainsKey("chunking_strategy"));
+            Assert.Equal(calls++ == 0 ? "gpt-4o-transcribe" : "whisper-1", await fields["model"].ReadAsStringAsync());
             return new HttpResponseMessage(HttpStatusCode.OK) { Content = JsonContent.Create(new { text = calls == 1 ? suspect : "Czuję zmęczenie. Hmm, no nic." }) };
         }));
-        var service = new OpenAiAudioTranscriptionService(http, Options.Create(new LlmOptions { TranscriptionModel = "gpt-4o-mini-transcribe" }));
+        var service = new OpenAiAudioTranscriptionService(http, Options.Create(new LlmOptions()));
         Assert.Equal("Czuję zmęczenie. Hmm, no nic.", await service.TranscribeAsync(source, "capture.m4a", "audio/mp4", default));
         Assert.Equal(2, calls);
         Assert.True(source.CanRead);

@@ -82,7 +82,7 @@ public sealed class OpenAiAudioTranscriptionService(HttpClient http, IOptions<Ll
         // switch this to auto-detection or another language.
         form.Add(new StringContent("pl"), "language");
         form.Add(new StringContent("json"), "response_format");
-        form.Add(new StringContent("auto"), "chunking_strategy");
+        if (model != "whisper-1") form.Add(new StringContent("auto"), "chunking_strategy");
         // On silent recordings the provider can echo the prompt as a transcription.
         // Supply the language, but no suggested transcript or instruction text.
         request.Content = form;
