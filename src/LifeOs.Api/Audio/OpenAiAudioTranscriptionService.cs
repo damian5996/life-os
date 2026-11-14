@@ -14,6 +14,8 @@ public sealed class OpenAiAudioTranscriptionService(HttpClient http, IOptions<Ll
         CancellationToken cancellationToken)
     {
         var config = options.Value;
+        if (config.RequireApiKey && string.IsNullOrWhiteSpace(config.ApiKey))
+            throw new TranscriptionException("Brak klucza AI dla LifeOS Dev. Nagranie pozostaje na telefonie do późniejszej synchronizacji.");
         if (string.IsNullOrWhiteSpace(config.TranscriptionModel))
             throw new TranscriptionException("Nie skonfigurowano modelu transkrypcji.");
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);

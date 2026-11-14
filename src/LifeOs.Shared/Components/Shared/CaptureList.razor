@@ -9,7 +9,7 @@ else
         @foreach (var capture in Captures)
         {
             <button class="capture-card kind-@capture.Type" @onclick="() => OnSelect.InvokeAsync(capture)">
-                <span class="card-meta"><span class="badge">@PolishLabels.Type(capture.Type)</span>
+                <span class="card-meta"><span class="badge">@(capture.CategoryName ?? PolishLabels.Type(capture.Type))</span>
                     <time datetime="@capture.CapturedAt.ToString("O")">@PolishLabels.Date(capture.CapturedAt)</time></span>
                 <span class="card-title">@(capture.Title ?? "Notatka")</span>
                 @if (!string.IsNullOrWhiteSpace(capture.Summary)) { <span class="card-summary">@capture.Summary</span> }

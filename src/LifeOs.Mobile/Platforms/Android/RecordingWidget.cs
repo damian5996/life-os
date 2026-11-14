@@ -5,7 +5,11 @@ using Android.Widget;
 
 namespace LifeOs.Mobile.Platforms.Android;
 
+#if LIFEOS_DEV
+[BroadcastReceiver(Label = "LifeOS Dev – Nagraj", Exported = true)]
+#else
 [BroadcastReceiver(Label = "Life OS – Nagraj", Exported = true)]
+#endif
 [IntentFilter([AppWidgetManager.ActionAppwidgetUpdate])]
 [MetaData("android.appwidget.provider", Resource = "@xml/recording_widget_info")]
 public sealed class RecordingWidget : AppWidgetProvider

@@ -31,8 +31,17 @@ namespace LifeOs.Api.Data.Migrations
                     b.Property<bool?>("ActionRequired")
                         .HasColumnType("boolean");
 
+                    b.Property<int?>("AiSettingsVersion")
+                        .HasColumnType("integer");
+
                     b.Property<DateTimeOffset>("CapturedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("CategoryId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("CategoryName")
+                        .HasColumnType("text");
 
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -76,7 +85,37 @@ namespace LifeOs.Api.Data.Migrations
 
                     b.HasIndex("CapturedAt");
 
+                    b.HasIndex("CategoryId");
+
                     b.ToTable("Captures");
+                });
+
+            modelBuilder.Entity("LifeOs.Api.Services.AiSettingsRow", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("ActiveJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<int>("ActiveVersion")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("DraftJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<Guid>("Revision")
+                        .IsConcurrencyToken()
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("AiSettings");
                 });
 #pragma warning restore 612, 618
         }

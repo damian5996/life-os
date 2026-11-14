@@ -19,7 +19,10 @@ public static class MauiProgram
         builder.Services.AddSingleton(config);
         if (!Uri.TryCreate(config.ApiBaseUrl, UriKind.Absolute, out var apiBaseUrl) || apiBaseUrl.Scheme is not ("https" or "http"))
             throw new InvalidOperationException("Nieprawidłowy adres API w konfiguracji aplikacji.");
-#if !DEBUG
+#if LIFEOS_DEV
+        if (!apiBaseUrl.IsLoopback || apiBaseUrl.Port != 5081) throw new InvalidOperationException("LifeOS Dev wymaga lokalnego API na porcie 5081.");
+        builder.Services.AddSingleton(new LifeOs.Api.Ui.UiEnvironment("Dev", true));
+#elif !DEBUG
         if (apiBaseUrl.Scheme != "https") throw new InvalidOperationException("Wersja Release wymaga HTTPS.");
 #endif
         builder.Services.AddSingleton(new LifeOs.Api.Ui.LifeOsClientOptions(apiBaseUrl));

@@ -36,6 +36,9 @@ public sealed class CaptureCreationService(LifeOsDbContext db, ILifeOsLlmService
             log.LogInformation("Classification started {CaptureId}", capture.Id);
             var result = await llm.ClassifyCaptureAsync(capture.RawText, cancellationToken);
             capture.Type = result.Type;
+            capture.CategoryId = result.CategoryId;
+            capture.CategoryName = result.CategoryName;
+            capture.AiSettingsVersion = result.SettingsVersion;
             capture.Title = result.Title;
             capture.Summary = result.Summary;
             capture.Tags = result.Tags;

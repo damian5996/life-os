@@ -15,6 +15,7 @@ public sealed class LlmOptions
 {
     public string BaseUrl { get; set; } = "https://api.openai.com/v1/";
     public string ApiKey { get; set; } = "";
+    public bool RequireApiKey { get; set; }
     public string Model { get; set; } = "";
     public bool UseJsonSchema { get; set; } = true;
     public int TimeoutSeconds { get; set; } = 60;

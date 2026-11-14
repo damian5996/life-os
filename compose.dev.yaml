@@ -1,0 +1,19 @@
+name: lifeos-local-dev
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: lifeos_dev
+      POSTGRES_USER: lifeos_dev
+      POSTGRES_PASSWORD: ${LIFEOS_DEV_DB_PASSWORD:?Start through scripts/start-dev.ps1}
+    ports:
+      - "127.0.0.1:55439:5432"
+    volumes:
+      - lifeos-dev-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lifeos_dev -d lifeos_dev"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+volumes:
+  lifeos-dev-data:

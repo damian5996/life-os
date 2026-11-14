@@ -2,7 +2,12 @@ namespace LifeOs.Api.Models;
 
 public sealed record CaptureMetadata(string? Activity, double? Energy, double? Satisfaction, string? Location);
 public sealed record CaptureClassification(
-    CaptureType Type, string Title, string Summary, string[] Tags, bool ActionRequired, CaptureMetadata Metadata);
+    CaptureType Type, string Title, string Summary, string[] Tags, bool ActionRequired, CaptureMetadata Metadata)
+{
+    [System.Text.Json.Serialization.JsonIgnore] public Guid? CategoryId { get; init; }
+    [System.Text.Json.Serialization.JsonIgnore] public string? CategoryName { get; init; }
+    [System.Text.Json.Serialization.JsonIgnore] public int? SettingsVersion { get; init; }
+}
 
 public sealed record ReviewContent(
     string[] KeyObservations, string[] RecurringThemes, string[] EnergyGivers,

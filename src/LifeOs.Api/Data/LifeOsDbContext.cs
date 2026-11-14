@@ -6,6 +6,7 @@ namespace LifeOs.Api.Data;
 public sealed class LifeOsDbContext(DbContextOptions<LifeOsDbContext> options) : DbContext(options)
 {
     public DbSet<Capture> Captures => Set<Capture>();
+    public DbSet<LifeOs.Api.Services.AiSettingsRow> AiSettings => Set<LifeOs.Api.Services.AiSettingsRow>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -17,5 +18,11 @@ public sealed class LifeOsDbContext(DbContextOptions<LifeOsDbContext> options) :
         capture.Property(x => x.Tags).HasColumnType("text[]");
         capture.Property(x => x.MetadataJson).HasColumnType("jsonb");
         capture.HasIndex(x => x.CapturedAt);
+        capture.HasIndex(x => x.CategoryId);
+        var settings = modelBuilder.Entity<LifeOs.Api.Services.AiSettingsRow>();
+        settings.HasKey(x => x.Id);
+        settings.Property(x => x.Revision).IsConcurrencyToken();
+        settings.Property(x => x.DraftJson).HasColumnType("jsonb");
+        settings.Property(x => x.ActiveJson).HasColumnType("jsonb");
     }
 }

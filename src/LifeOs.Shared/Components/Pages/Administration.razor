@@ -1,0 +1,117 @@
+@page "/administracja"
+@inject LifeOsApiClient Api
+@inject IServiceProvider Services
+<PageTitle>Administracja · LifeOS Dev</PageTitle>
+<h1>Kategorie i instrukcje AI</h1>
+@if (Services.GetService<UiEnvironment>()?.AdministrationEnabled != true)
+{
+    <p class="notice">Administracja jest obecnie dostępna tylko w LifeOS Dev.</p>
+}
+else
+{
+    <p class="intro">Dopasuj sposób porządkowania notatek. Najpierw sprawdź szkic na przykładzie, potem aktywuj go dla nowych notatek.</p>
+    @if (error is not null) { <p class="notice warning" role="alert">@error</p> }
+    @if (message is not null) { <p class="notice" role="status">@message</p> }
+    @if (document is null)
+    {
+        <button disabled="@busy" @onclick="Load">@(busy ? "Wczytywanie…" : "Wczytaj ustawienia")</button>
+    }
+    else
+    {
+        <p>Aktywna wersja: <strong>@document.ActiveVersion</strong>. @(dirty ? "Masz niezapisane zmiany." : "Szkic jest zapisany.")</p>
+        <fieldset disabled="@busy" class="admin-editor" @oninput="Edited" @onchange="Edited">
+            <legend>Kategorie notatek</legend>
+            <p class="muted">Nazwa jest widoczna na notatce. Instrukcja wyjaśnia AI, kiedy wybrać kategorię. Wyłączenie kategorii zachowuje historyczne notatki.</p>
+            @foreach (var category in document.Draft.Categories)
+            {
+                <section class="paper category-editor" @key="category.Id">
+                    <label for="@($"name-{category.Id}")">Nazwa</label>
+                    <input id="@($"name-{category.Id}")" @bind="category.Name" @bind:event="oninput" maxlength="80" />
+                    <label for="@($"instructions-{category.Id}")">Kiedy wybierać tę kategorię?</label>
+                    <textarea id="@($"instructions-{category.Id}")" @bind="category.Instructions" @bind:event="oninput" rows="3" maxlength="4000"></textarea>
+                    <label class="checkbox-label"><input type="checkbox" @bind="category.Enabled" /> Aktywna dla nowych notatek</label>
+                    @if (!document.Active.Categories.Any(c => c.Id == category.Id))
+                    { <button type="button" @onclick="() => RemoveCategory(category)">Usuń kategorię ze szkicu</button> }
+                </section>
+            }
+            <button id="add-category" type="button" @onclick="AddCategory" disabled="@(document.Draft.Categories.Count >= 50)">+ Dodaj kategorię</button>
+            <h2>Instrukcje AI</h2>
+            <label for="capture-instructions">Porządkowanie pojedynczej notatki</label>
+            <textarea id="capture-instructions" @bind="document.Draft.CaptureInstructions" @bind:event="oninput" rows="10" maxlength="16000"></textarea>
+            <label for="review-instructions">Podsumowanie wybranego okresu</label>
+            <textarea id="review-instructions" @bind="document.Draft.ReviewInstructions" @bind:event="oninput" rows="10" maxlength="16000"></textarea>
+            <p class="muted">Możesz zmieniać styl, sposób interpretacji i priorytety. Format danych oraz lista sekcji podsumowania pozostają ustalone przez aplikację.</p>
+        </fieldset>
+        <div class="admin-actions">
+            <button id="save-draft" disabled="@busy" @onclick="Save">Zapisz szkic</button>
+            <button id="activate-settings" class="primary" disabled="@busy" @onclick="Activate">Zapisz i aktywuj</button>
+            <button disabled="@busy" @onclick="RestoreActive">Wróć do aktywnych ustawień w szkicu</button>
+            <button disabled="@busy" @onclick="Defaults">Wczytaj domyślne do szkicu</button>
+        </div>
+        <p class="muted">Aktywacja dotyczy kolejnych przetwarzanych notatek i generowanych podsumowań. Nie zmienia zapisanych notatek ani produkcji.</p>
+        <section class="paper admin-preview">
+            <h2>Sprawdź na przykładzie</h2>
+            <label for="preview-text">Przykładowa notatka</label>
+            <textarea id="preview-text" @bind="sample" @bind:event="oninput" @bind:after="ClearPreview" rows="4" maxlength="20000" disabled="@busy"></textarea>
+            <div class="admin-actions">
+                <button id="preview-note" disabled="@(busy || string.IsNullOrWhiteSpace(sample))" @onclick="() => Preview(false)">Sprawdź kategorię i opis</button>
+                <button id="preview-review" disabled="@(busy || string.IsNullOrWhiteSpace(sample))" @onclick="() => Preview(true)">Sprawdź podsumowanie</button>
+            </div>
+            <p class="muted">Test używa bieżącego szkicu. Nie zapisuje notatki ani nie aktywuje ustawień. Korzysta z API AI. Test podsumowania traktuje przykład jako jedną notatkę.</p>
+            @if (busy) { <p role="status">Przetwarzanie…</p> }
+            @if (preview?.Note is not null) { <CaptureDetails Capture="preview.Note" /> }
+            @if (preview?.Review is not null) { <ReviewResult Review="preview.Review" /> }
+        </section>
+        <button disabled="@busy" @onclick="Load">Wczytaj zapisany szkic ponownie (odrzuca zmiany na ekranie)</button>
+    }
+}
+@code {
+    private SettingsDocument? document;
+    private SettingsPreview? preview;
+    private bool busy, dirty;
+    private string? error, message;
+    private string sample = "";
+    protected override async Task OnInitializedAsync()
+    {
+        if (Services.GetService<UiEnvironment>()?.AdministrationEnabled == true) await Load();
+    }
+    private void Edited() { dirty = true; preview = null; message = null; }
+    private void ClearPreview() { preview = null; }
+    private void AddCategory() { document!.Draft.Categories.Add(new()); Edited(); }
+    private void RemoveCategory(NoteCategory category) { document!.Draft.Categories.Remove(category); Edited(); }
+    private async Task Run(Func<Task> action)
+    {
+        if (busy) return;
+        busy = true; error = null; message = null;
+        try { await action(); }
+        catch (UiApiException e) { error = e.Message; }
+        finally { busy = false; }
+    }
+    private Task Load() => Run(async () => { document = await Api.GetSettingsAsync(); dirty = false; preview = null; });
+    private Task Save() => Run(async () =>
+    {
+        document = await Api.SaveSettingsAsync(document!.Revision, document.Draft);
+        dirty = false; message = "Szkic zapisany. Aktywne ustawienia nie zmieniły się.";
+    });
+    private Task Activate() => Run(async () =>
+    {
+        document = await Api.SaveSettingsAsync(document!.Revision, document.Draft);
+        dirty = false;
+        document = await Api.ActivateSettingsAsync(document.Revision);
+        message = $"Aktywowano wersję {document.ActiveVersion} w LifeOS Dev.";
+    });
+    private Task Defaults() => Run(async () =>
+    {
+        var defaults = await Api.GetDefaultSettingsAsync();
+        foreach (var category in document!.Active.Categories.Where(c => !defaults.Categories.Any(d => d.Id == c.Id)))
+            defaults.Categories.Add(new NoteCategory { Id = category.Id, Name = category.Name, Instructions = category.Instructions, LegacyType = category.LegacyType, Enabled = false });
+        document = document with { Draft = defaults }; Edited();
+    });
+    private void RestoreActive()
+    {
+        var copy = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(document!.Active, ClientJsonContext.Default.AiSettings);
+        document = document with { Draft = System.Text.Json.JsonSerializer.Deserialize(copy, ClientJsonContext.Default.AiSettings)! };
+        Edited();
+    }
+    private Task Preview(bool review) => Run(async () => { preview = null; preview = await Api.PreviewSettingsAsync(document!.Draft, sample, review); });
+}

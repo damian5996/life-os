@@ -27,7 +27,9 @@ public sealed class LifeOsApiClient(HttpClient http, ApiConfiguration config) : 
         if (!Uri.TryCreate(config.ApiBaseUrl, UriKind.Absolute, out var baseUrl) ||
             baseUrl.Scheme is not ("http" or "https"))
             throw new InvalidOperationException("Nieprawidłowy adres API w konfiguracji aplikacji.");
-#if !DEBUG
+#if LIFEOS_DEV
+        if (!baseUrl.IsLoopback || baseUrl.Port != 5081) throw new InvalidOperationException("LifeOS Dev wymaga lokalnego API na porcie 5081.");
+#elif !DEBUG
         if (baseUrl.Scheme != "https") throw new InvalidOperationException("Wersja Release wymaga adresu HTTPS.");
 #endif
         var info = new FileInfo(path);
