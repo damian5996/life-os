@@ -6,6 +6,32 @@ namespace LifeOs.Mobile.Tests;
 public sealed class UploadTests
 {
     [Theory]
+    [InlineData("Nie udało się wiarygodnie rozpoznać polskiej mowy.", "nie rozpoznał poprawnie polskiej mowy")]
+    [InlineData("Przekroczono czas transkrypcji.", "limit czasu")]
+    [InlineData("Usługa transkrypcji zwróciła HTTP 400.", "HTTP 400")]
+    [InlineData("private provider content", "HTTP 502")]
+    public async Task FailedTranscriptionExplainsKnownReasonAndPreservesAudio(string title, string expected)
+    {
+        var path = Path.GetTempFileName();
+        try
+        {
+            await File.WriteAllBytesAsync(path, [1, 2, 3]);
+            using var http = new HttpClient(new Handler(_ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.BadGateway)
+            {
+                Content = new StringContent(System.Text.Json.JsonSerializer.Serialize(new { title }),
+                    System.Text.Encoding.UTF8, "application/problem+json")
+            })));
+            var api = new LifeOsApiClient(http, new("https://lifeos.test/"));
+            var error = await Assert.ThrowsAsync<HttpRequestException>(() => api.UploadAudioAsync(path, () => { }, default));
+            Assert.Equal(HttpStatusCode.BadGateway, error.StatusCode);
+            Assert.Contains(expected, error.Message);
+            Assert.DoesNotContain("private", error.Message);
+            Assert.Equal(new byte[] { 1, 2, 3 }, await File.ReadAllBytesAsync(path));
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Theory]
     [InlineData("COMPLETED")]
     [InlineData("FAILED")]
     public async Task SendsFileAndAcceptsBothSavedStates(string state)

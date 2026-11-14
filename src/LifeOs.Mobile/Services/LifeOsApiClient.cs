@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text.Json;
 using LifeOs.Mobile.Models;
 
 namespace LifeOs.Mobile.Services;
@@ -46,13 +47,35 @@ public sealed class LifeOsApiClient(HttpClient http, ApiConfiguration config) : 
         if (response.StatusCode == HttpStatusCode.UnprocessableEntity)
             throw new NoSpeechDetectedException();
         if (response.StatusCode != HttpStatusCode.Created)
-            throw new HttpRequestException("Nie udało się zapisać notatki. Nagranie zostało na telefonie. " +
-                "Przed ponowieniem sprawdź zapis na serwerze — mógł zakończyć się mimo błędu połączenia.");
+            throw new HttpRequestException(await UploadErrorAsync(response, cancellationToken), null, response.StatusCode);
         var capture = await response.Content.ReadFromJsonAsync(MobileJsonContext.Default.CaptureResponse, cancellationToken);
         if (capture is null || capture.Id == Guid.Empty || (recordingId.HasValue && capture.Id != recordingId) ||
             (capture.ProcessingState is not ("COMPLETED" or "FAILED") && !(recordingId.HasValue && capture.ProcessingState == "PENDING")))
             throw new HttpRequestException("Nieprawidłowe potwierdzenie zapisu. Nagranie pozostało na telefonie.");
         return capture;
+    }
+
+    private static async Task<string> UploadErrorAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        // Only translate known server errors; never display arbitrary proxy/provider bodies.
+        if (response.StatusCode == HttpStatusCode.BadGateway &&
+            response.Content.Headers.ContentType?.MediaType == "application/problem+json")
+        {
+            try
+            {
+                using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
+                var title = body.RootElement.TryGetProperty("title", out var value) && value.ValueKind == JsonValueKind.String
+                    ? value.GetString() : null;
+                if (title?.StartsWith("Nie udało się wiarygodnie rozpoznać polskiej mowy.", StringComparison.Ordinal) == true)
+                    return "Serwer nie rozpoznał poprawnie polskiej mowy. Nagranie pozostało na telefonie; notatka nie została utworzona.";
+                if (title?.StartsWith("Przekroczono czas transkrypcji", StringComparison.Ordinal) == true)
+                    return "Transkrypcja przekroczyła limit czasu. Nagranie pozostało na telefonie. Ponów synchronizację.";
+                if (title == "Usługa transkrypcji zwróciła HTTP 400.")
+                    return "Usługa transkrypcji odrzuciła nagranie (HTTP 400). Plik pozostał na telefonie.";
+            }
+            catch (JsonException) { }
+        }
+        return $"Serwer nie zapisał nagrania (HTTP {(int)response.StatusCode}). Plik pozostał na telefonie. Ponów synchronizację.";
     }
 
     // Switch UI phase when the file bytes have been written to the HTTP transport.

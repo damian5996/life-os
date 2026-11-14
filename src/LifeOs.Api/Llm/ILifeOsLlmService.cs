@@ -19,6 +19,6 @@ public sealed class LlmOptions
     public bool UseJsonSchema { get; set; } = true;
     public int TimeoutSeconds { get; set; } = 60;
     public string TranscriptionModel { get; set; } = "gpt-4o-transcribe";
-    public string TranscriptionFallbackModel { get; set; } = "gpt-4o-transcribe";
+    public string TranscriptionFallbackModel { get; set; } = "whisper-1";
     public int TranscriptionTimeoutSeconds { get; set; } = 180;
 }
